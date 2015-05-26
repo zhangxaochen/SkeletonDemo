@@ -21,9 +21,9 @@ void segment::set_depthMap(const cv::Mat& depth)
 {
 	depth_map=depth.clone();
 }
-void segment::set_headTemplate2D()
+void segment::set_headTemplate2D(const std::string &headTemplatePath)
 {
-	Mat head=imread("headtemplate.bmp",0);
+	Mat head=imread(headTemplatePath,0);
 	head_template=head.clone();
 	threshold(head_template,head_template,128,255,THRESH_BINARY);
 }
@@ -238,10 +238,10 @@ void segment::set_name(std::string s)
 {
 	name=s;
 }
-void segment::read_config()
+void segment::read_config(const std::string &configPath)
 {
 	ifstream config_file;
-	config_file.open("config.txt");
+	config_file.open(configPath);
 	config_file>>videoname>>threshold_depth_min>>threshold_depth_max
 		>>threshold_binary_filter>>threshold_filter_min>>threshold_filter_max
 		>>threshold_binary_response>>threshold_contour_size

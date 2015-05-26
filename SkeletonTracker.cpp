@@ -2,6 +2,8 @@
 
 //zhangxaochen:
 #include "SimpleSilhouette.h"
+#include "./sgf_seed/sgf_segment.h"
+
 using namespace std;
 //using namespace zc;
 
@@ -37,6 +39,11 @@ namespace sensekit { namespace plugins { namespace skeleton {
 
 		int veryDepth = -1;
 		Point seed = zc::simpleSeed(dm, &veryDepth, ZCDEBUG);
+
+		const string sgf_configPath = "../../../plugins/orbbec_skeleton/sgf_seed/config.txt",
+			sgf_headTemplatePath = "../../../plugins/orbbec_skeleton/sgf_seed/headtemplate.bmp";
+		
+		vector<Point> sgfSeeds = zc::getHeadSeeds(dm, sgf_configPath, sgf_headTemplatePath, ZCDEBUG);
 
 		circle(dm_draw, seed, 3, 255, 2);
 

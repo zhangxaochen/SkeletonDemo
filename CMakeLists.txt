@@ -10,6 +10,16 @@ set(${_projname}_SOURCES
   SkeletonTracker.h
   SkeletonTracker.cpp
   
+  SimpleSilhouette.h
+  SimpleSilhouette.cpp
+  
+  ./sgf_seed/sgf_segment.cpp
+  ./sgf_seed/Holefilling.h
+  ./sgf_seed/Node.h
+  ./sgf_seed/sgf_segment.h
+  ./sgf_seed/Holefilling.cpp
+#  ./sgf_seed/main.cpp
+  
   bodyPartRecognizer.h
   CapgSkeleton.h
   denseDefine.h
