@@ -21,11 +21,15 @@ void segment::set_depthMap(const cv::Mat& depth)
 {
 	depth_map=depth.clone();
 }
-void segment::set_headTemplate2D(const std::string &headTemplatePath)
+bool segment::set_headTemplate2D(const std::string &headTemplatePath)
 {
 	Mat head=imread(headTemplatePath,0);
-	head_template=head.clone();
-	threshold(head_template,head_template,128,255,THRESH_BINARY);
+	bool readSucceed = !head.empty();
+	if(readSucceed){
+		head_template=head.clone();
+		threshold(head_template,head_template,128,255,THRESH_BINARY);
+	}
+	return readSucceed;
 }
 void segment::fill_holes()
 {
@@ -238,10 +242,12 @@ void segment::set_name(std::string s)
 {
 	name=s;
 }
-void segment::read_config(const std::string &configPath)
+bool segment::read_config(const std::string &configPath)
 {
 	ifstream config_file;
 	config_file.open(configPath);
+	bool openSucceed = !config_file.bad();
+	if(openSucceed){
 	config_file>>videoname>>threshold_depth_min>>threshold_depth_max
 		>>threshold_binary_filter>>threshold_filter_min>>threshold_filter_max
 		>>threshold_binary_response>>threshold_contour_size
@@ -249,6 +255,8 @@ void segment::read_config(const std::string &configPath)
 		>>a>>const_depth;
 
 	config_file.close();
+	}
+	return openSucceed;
 }
 void segment::deal_with_contours(vector<vector<Point> >& contours,int k)
 { //兴趣区域轮廓形状大小规则，参数自己调整

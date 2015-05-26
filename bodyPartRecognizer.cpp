@@ -761,7 +761,7 @@ void BPRecognizer::clearPre()
 	_preErodeForError = -1;
 }
 
-bool BPRecognizer::load(string& pathname)
+bool BPRecognizer::load(const string& pathname)
 {
 	clear();
 
@@ -866,7 +866,7 @@ bool BPRecognizer::load(string& pathname)
 	return true;
 }
 
-bool BPRecognizer::save(string& pathname)
+bool BPRecognizer::save(const string& pathname)
 {
 	// save parameters
 	fstream paraFile;

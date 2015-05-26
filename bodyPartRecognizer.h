@@ -168,8 +168,8 @@ public:
 	BPRecognizer();
 	~BPRecognizer();
 
-	bool load(string& pathname);
-	bool save(string& pathname);
+	bool load(const string& pathname);
+	bool save(const string& pathname);
 
 	BPRecogPara& getPara();
 	void setPara(BPRecogPara& para);

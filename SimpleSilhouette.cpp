@@ -12,11 +12,11 @@ namespace zc{
 #endif
 
 	static BPRecognizer *bpr = nullptr;
-	BPRecognizer* getBprAndLoadFeature(){
-		if (bpr == nullptr){
+	BPRecognizer* getBprAndLoadFeature(const string &featurePath){
+		if (nullptr == bpr){
 			bpr = new BPRecognizer();
-			string featurePath(FEATURE_PATH);
-			if (!bpr->load(featurePath)){
+			//string featurePath(FEATURE_PATH);
+			if (!bpr->load(const_cast<string&>(featurePath))){
 				printf("body part feature loader fail\n");
 				return nullptr;
 			}

@@ -7,7 +7,9 @@
 namespace zc{
 #define ZCDEBUG 1
 
-	BPRecognizer* getBprAndLoadFeature();
+	//BPRecognizer* getBprAndLoadFeature();
+	//BPRecognizer* getBprAndLoadFeature(const char *featurePath = nullptr);
+	BPRecognizer* getBprAndLoadFeature(const string &featurePath);
 
 	Mat simpleMask(const Mat &curMat, bool debugDraw = false);
 

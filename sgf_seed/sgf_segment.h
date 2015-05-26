@@ -17,7 +17,7 @@ namespace sgf
 		segment(bool show_result1=false,bool show_distance_map1=false,bool show_edge1=false,
 			bool do_region_grow1=false,bool show_responses1=false,bool show_histogram1=false);
 		void set_depthMap(const cv::Mat&);
-		void set_headTemplate2D(const std::string &configPath);
+		bool set_headTemplate2D(const std::string &configPath);
 		cv::Mat get_edgeMapWithThresh();
 		cv::Mat get_distanceMap();
 		cv::Mat get_result();
@@ -27,7 +27,7 @@ namespace sgf
 		void set_name(std::string);
 		void output(string);
 		void compute();
-		void read_config(const std::string &configPath);
+		bool read_config(const std::string &configPath);
 		std::vector<cv::Point> get_seed();
 		int accurate;
 		std::string videoname;
@@ -110,8 +110,7 @@ namespace zc{
 		static segment *my_seg = nullptr;
 		if (nullptr == my_seg){
 			my_seg = new segment(debugDraw);
-			my_seg->read_config(configPath);
-			my_seg->set_headTemplate2D(headTemplatePath);
+			assert(my_seg->read_config(configPath) && my_seg->set_headTemplate2D(headTemplatePath));
 		}
 
 		cv::Mat tmp;
