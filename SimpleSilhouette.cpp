@@ -154,10 +154,16 @@ namespace zc{
 
 	//zhangxaochen: simple region-grow, actually a flood fill method
 	// RETURN: a mask mat, foreground is white
-	Mat simpleRegionGrow(const Mat &dmat, Point seed, int thresh, bool debugDraw){
+	Mat simpleRegionGrow(const Mat &dmat, Point seed, int thresh, const Rect roi, bool debugDraw){
 		Size sz = dmat.size();
 		int hh = sz.height,
 			ww = sz.width;
+
+		//实际进行区域增长的 roi：
+		int top = max(0, roi.y),
+			left = max(0, roi.x),
+			bottom = min(hh, roi.y + roi.height),
+			right = min(ww, roi.x + roi.width);
 
 		//1. init
 		//存标记：0未查看， 1在queue中， 255已处理过neibor；最终得到的正是 mask
@@ -185,7 +191,8 @@ namespace zc{
 			for (int i = 0; i < nnbr; i++){
 				Point npt = pt + Point(dx[i], dy[i]);
 				//纵向简单去掉地面,防止脚部与地面连成一片：
-				if (0 <= npt.x && npt.x < ww && 0 <= npt.y && npt.y < hh * 6 / 8)
+				//if(0<=npt.x && npt.x<ww && 0<=npt.y && npt.y<hh*6/8)
+				if (left <= npt.x && npt.x < right && top <= npt.y && npt.y < bottom)
 				{
 					const ushort& depNpt = dmat.at<ushort>(npt);
 					uchar& flgNpt = flagMat.at<uchar>(npt);
@@ -206,16 +213,16 @@ namespace zc{
 		static Mat prevFlagMat = flagMat.clone();
 
 		int currFgPtCnt = countNonZero(flagMat == UCHAR_MAX);
-		// 		//如果新一帧前景点个数突变： 1.增多 50%，可能是背景误入； 2.个数太少，可能区域增长失败。 则放弃之
-		// 		if (currFgPtCnt < ww*hh*1e-2 || currFgPtCnt*1. / prevFgPtCnt > 1.5){
-		// 			printf("currFgPtCnt/prevFgPtCnt > 1.5: %d, %d\n", prevFgPtCnt, currFgPtCnt);
-		// 			flagMat = prevFlagMat;
-		// 		}
-		// 		else{
-		// 			printf("~currFgPtCnt/prevFgPtCnt > 1.5: %d, %d\n", prevFgPtCnt, currFgPtCnt);
-		// 			prevFgPtCnt = currFgPtCnt;
-		// 			prevFlagMat = flagMat;
-		// 		}
+		// 	//如果新一帧前景点个数突变： 1.增多 50%，可能是背景误入； 2.个数太少，可能区域增长失败。 则放弃之
+		// 	if(currFgPtCnt < ww*hh*1e-2 || currFgPtCnt*1./prevFgPtCnt > 1.5){
+		// 		printf("currFgPtCnt/prevFgPtCnt > 1.5: %d, %d\n", prevFgPtCnt, currFgPtCnt);
+		// 		flagMat = prevFlagMat;
+		// 	}
+		// 	else{
+		// 		printf("~currFgPtCnt/prevFgPtCnt > 1.5: %d, %d\n", prevFgPtCnt, currFgPtCnt);
+		// 		prevFgPtCnt = currFgPtCnt;
+		// 		prevFlagMat = flagMat;
+		// 	}
 
 		if (debugDraw){
 			//printf("maxPts: %d\n", maxPts);

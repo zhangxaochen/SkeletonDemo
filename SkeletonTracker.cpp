@@ -60,7 +60,9 @@ namespace sensekit { namespace plugins { namespace skeleton {
 			imshow("dm_draw", dm_draw);
 		}
 
-		Mat fgMsk = zc::simpleRegionGrow(dm, seed, 333, ZCDEBUG);
+		//Mat fgMsk = zc::simpleRegionGrow(dm, seed, 333, ZCDEBUG);
+		//纵向简单去掉屏幕下缘 1/4，即地面,防止脚部与地面连成一片：
+		Mat fgMsk = zc::simpleRegionGrow(dm, seed, 333, Rect(0, 0, dm.cols, dm.rows * 3 / 4), ZCDEBUG);
 		//cout<<"simpleRegionGrow.t: "<<clock()-begt<<endl;
 
 		//兼容林驰代码：
