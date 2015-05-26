@@ -30,7 +30,8 @@ namespace zc{
 			ww = sz.width;
 
 		//NMH：若找不到， 返回中心点
-		Point res(ww / 2, hh / 2);
+		Point ptCenter(ww / 2, hh / 2),
+			res = ptCenter;
 
 		//ROI 子窗口边界
 		int top = hh / 4,
@@ -43,7 +44,8 @@ namespace zc{
 			dfar = 3000;
 
 		Mat roiMat(dmat, Rect(left, top, right - left, bottom - top));
-		Mat msk = dnear <= roiMat & roiMat <= dfar;
+		//Mat msk = dnear <= roiMat & roiMat <= dfar;
+		Mat msk = dnear <= dmat & dmat <= dfar;
 
 
 		Mat histo;
@@ -54,10 +56,18 @@ namespace zc{
 		bool isLoop = true;
 		do
 		{
+			//人离得太近(<90cm),但远的又是背景, 所以重置种子点为屏幕中心:
+			if (dfar <= dnear){
+				res = ptCenter;
+				veryDepth = dmat.at<ushort>(res);
+				break;
+			}
 			int histSize = dfar - dnear; //每毫米一个 bar
 			float range[] = { dnear, dfar };
 			const float *histRange = { range };
-			calcHist(&roiMat, 1, 0, msk, histo, 1, &histSize, &histRange);
+			//calcHist(&roiMat, 1, 0, msk, histo, 1, &histSize, &histRange);
+			//尝试不用 roiMat：
+			calcHist(&dmat, 1, 0, msk, histo, 1, &histSize, &histRange);
 
 			int cntUplim = ww*hh / 70;
 			int cntMax = -1;
@@ -106,11 +116,13 @@ namespace zc{
 				imshow("hist", histImage);
 			}
 			Mat vdPts;
-			//findNonZero(dmat==veryDepth, vdMat);
-			findNonZero(roiMat == veryDepth, vdPts);
+			//findNonZero(roiMat==veryDepth, vdPts);
+			//尝试不用 roiMat：
+			findNonZero(dmat == veryDepth, vdPts);
 			if (vdPts.total()>0){
-				//res = vdMat.at<Point>(0);//+Point(left, top);
-				res = vdPts.at<Point>(0) + Point(left, top);
+				//res = vdPts.at<Point>(0)+Point(left, top);
+				//尝试不用 roiMat：
+				res = vdPts.at<Point>(0);//+Point(left, top);
 			}
 			else{
 				printf("vdPts empty, veryDepth: %d\n", veryDepth);
@@ -120,7 +132,7 @@ namespace zc{
 
 		*outVeryDepth = veryDepth;
 		return res;
-	}//simpleSilhouette
+	}//simpleSeed
 
 	Mat simpleMask(const Mat &curMat, bool debugDraw){
 		static bool isFirst = true;
