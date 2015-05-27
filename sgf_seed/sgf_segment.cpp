@@ -111,8 +111,8 @@ void segment::compute_response()
 		threshold(matching_space,matching_space_binary,threshold_binary_response,255,THRESH_BINARY);//绝对二值化
 		matching_space_binary.convertTo(matching_space_binary,CV_8U);
 
- 		sub_responses.push_back(matching_space.clone());
- 		sub_responses_binary.push_back(matching_space_binary.clone());
+		sub_responses.push_back(matching_space.clone());
+		sub_responses_binary.push_back(matching_space_binary.clone());
 	}
 }
 double segment::get_headheight(double d)
@@ -146,7 +146,7 @@ Mat segment::get_result()
 void segment::compute()
 {
 	fill_holes();
- 	smooth_image();
+	smooth_image();
 
 // 	imshow("depth image",gray_map);
 // 	waitKey(1);
@@ -408,7 +408,8 @@ void segment::seperate_foot_and_ground()
 	filter_map.convertTo(filter_map,CV_8U);
 // 	double dmax,dmin;
 // 	minMaxLoc(filter_map,&dmin,&dmax);
-// 	cout<<"*****dmax,dmin:"<<dmax<<"--"<<dmin<<endl;
+// 	cout<<"*****dmax,dmin:"<<dmax<<"--"<<dmin<<endl;
+
 
 	for ( int i = 1; i < 4; i = i + 2 )
 	{
@@ -527,10 +528,10 @@ void segment::choose_and_draw_interest_region()
 // 			}
 // 			else
 // 				it=region_of_interest.erase(it);
-   		}
+		}
 		else
 			it=region_of_interest.erase(it);
- 	}
+	}
 	for (int i=0;i<headpoints_location.size();++i)
 	{
 		circle(interest_point2,headpoints_location[i],headpoints_radius[i],0,2);

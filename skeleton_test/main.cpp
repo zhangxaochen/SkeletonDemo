@@ -45,10 +45,11 @@ void main(){
 	//oniFname = "E:/oni_data/oni132x64/zc-stand-wo-feet-qvga.oni";
 
 	xn::Player plyr;
-	plyr.SetRepeat(true);
-	//Player 这么用？：
-	plyr.SetSource(XN_RECORD_MEDIUM_FILE, oniFname);
+	//plyr.SetRepeat(false);//无效
+	//plyr.SetSource 接口重复？：
+	//plyr.SetSource(XN_RECORD_MEDIUM_FILE, oniFname);
 	rc = ctx.OpenFileRecording(oniFname, plyr);
+	plyr.SetRepeat(false); //放在 OpenFileRecording 之后才有效
 	if(!checkOpenNIError(rc, "ctx.OpenFileRecording"))
 		return;
 
@@ -73,8 +74,9 @@ void main(){
 
 	char key = 0;
 	while(key != 27){
-		//frameCntr++;
-		frameCntr = depthMD.FrameID();
+		frameCntr++;
+		//frameCntr = depthMD.FrameID(); //若计时用，不用 .FrameID
+		cout<<"frameCntr: "<<frameCntr<<endl;
 
 		ctx.WaitAndUpdateAll();
 
@@ -116,21 +118,12 @@ void main(){
 		}
 		imshow("dm_draw", dm_draw);
 
-				//孙国飞寻找头部种子点
-		begt = clock();
-		const string sgf_configPath = "../../sgf_seed/config.txt",
-			sgf_headTemplatePath = "../../sgf_seed/headtemplate.bmp";
-		vector<Point> sgfSeeds = zc::getHeadSeeds(dm, 
-			sgf_configPath, sgf_headTemplatePath, ZCDEBUG);
-		cout<<"sgfSeeds.size(): "<<sgfSeeds.size()<<endl;
-		sgfSeedSumt += (clock()-begt);
-
-
-
 		//区域增长 thresh=50cm
 		begt = clock();
 		//纵向简单去掉屏幕下缘 1/4，即地面,防止脚部与地面连成一片：
-		Mat fgMsk = zc::simpleRegionGrow(dm, seed, 333, Rect(0, 0, dm.cols, dm.rows*3/4), ZCDEBUG);
+		int rgThresh = 333;
+		Rect rgRoi(0, 0, dm.cols, dm.rows*3/4);
+		Mat fgMsk = zc::simpleRegionGrow(dm, seed, rgThresh, rgRoi, ZCDEBUG);
 		//cout<<"simpleRegionGrow.t: "<<clock()-begt<<endl;
 		rgSumt += (clock()-begt);
 
@@ -138,6 +131,7 @@ void main(){
 		CapgSkeleton tSklt;
 		Mat tmpDm;
 		dm.convertTo(tmpDm, CV_32SC1);
+		//背景填充最大值，所以前景反而黑色：
 		tmpDm.setTo(INT_MAX, fgMsk==0);
 		imshow("tmpDm", tmpDm);
 		
@@ -160,9 +154,33 @@ void main(){
 		bpr->predictAndMergeJoint(&depthImg, tSklt, &maskImg, false, false, true);
 		predAndMergeSumt  += (clock()-begt);
 
+		//---------------孙国飞寻找头部种子点：
+		begt = clock();
+		const string sgf_configPath = "../../sgf_seed/config.txt",
+			sgf_headTemplatePath = "../../sgf_seed/headtemplate.bmp";
+		vector<Point> sgfSeeds = zc::getHeadSeeds(dm, 
+			sgf_configPath, sgf_headTemplatePath, ZCDEBUG);
+		cout<<"sgfSeeds.size(): "<<sgfSeeds.size()<<endl;
+		sgfSeedSumt += (clock()-begt);
 
-		cout<<"frameCntr: "<<frameCntr<<endl;
+		for(size_t i=0; i<sgfSeeds.size(); i++){
+			Point sdi = sgfSeeds[i];
+			Mat fgMski = zc::simpleRegionGrow(dm, sdi, rgThresh, rgRoi, ZCDEBUG);
+			imshow("fgMski="+std::to_string((long long)i), fgMski);
+		}
 
-		key = waitKey(0);
+
+		key = waitKey(1);
 	}//while
+
+	//统计几个平均时间(ms)：
+	cout<<"frameCntr, seedSumt, sgfSeedSumt, rgSumt, cannySumt, predAndMergeSumt: "
+		<<frameCntr<<":: "
+		<<seedSumt*1./frameCntr<<", "<<sgfSeedSumt*1./frameCntr<<", "
+		<<rgSumt*1./frameCntr<<", "<<cannySumt*1./frameCntr<<", "<<predAndMergeSumt*1./frameCntr<<endl;
+
+	destroyAllWindows();
+	ctx.StopGeneratingAll();
+	ctx.Release();
+
 }//main

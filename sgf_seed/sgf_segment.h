@@ -110,7 +110,7 @@ namespace zc{
 		static segment *my_seg = nullptr;
 		if (nullptr == my_seg){
 			my_seg = new segment(debugDraw);
-			assert(my_seg->read_config(configPath) && my_seg->set_headTemplate2D(headTemplatePath));
+			CV_Assert(my_seg->read_config(configPath) && my_seg->set_headTemplate2D(headTemplatePath));
 		}
 
 		cv::Mat tmp;
