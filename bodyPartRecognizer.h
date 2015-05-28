@@ -58,6 +58,9 @@ class BPRTree;
 void generateMaskImage( const IplImage* pDepthImg,IplImage* pMaskImg );
 IplImage* convertSkeletonToImage(const CapgSkeleton&s);
 
+//by zhangxaochen:
+Mat label_gray2rgb(Mat &labelMat);
+
 struct BPRecogPara
 {
 	int tree_depth; // depth one decision tree should reach

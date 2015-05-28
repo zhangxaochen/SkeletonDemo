@@ -467,14 +467,36 @@ ErodeEnd:
 	//return ret;
 }
 
-//zhangxaochen: 函数体移到 .cpp 来：
+//by zhangxaochen: 
+// utility func, show colorful labels. 由predictAndMergeJoint绘制pLabelImg2部分改写而来
+Mat label_gray2rgb(Mat &labelMat){
+	CV_Assert(labelMat.type()==CV_8UC1);
+
+	Mat out = Mat::zeros(labelMat.size(), CV_8UC3);
+	for(size_t y = 0; y < labelMat.rows; y++){
+		//uchar *arow = labelMat.data + y * labelMat.step; //这么写对不对？
+		uchar *arow = labelMat.ptr<uchar>(y),
+			*orow = out.ptr<uchar>(y);
+		for(size_t x = 0; x < labelMat.cols; x++){
+			//BPR init 之后就可用这个 static func
+			Color c = DepthSample::getColor(arow[x]);
+			orow[3*x+0]=c.get_b();
+			orow[3*x+1]=c.get_g();
+			orow[3*x+2]=c.get_r();
+		}
+	}
+
+	return out;
+}
+
+//by zhangxaochen: 函数体移到 .cpp 来：
 void BPRecognizer::predictAndMergeJoint(IplImage* depthImg, CapgSkeleton& sklt, IplImage* maskImg, bool usePre, bool useErode,bool showPic){
 	IplImage* pLabelImg = predict(depthImg, maskImg, false, usePre);
 
 	////////////////////////////////////////////////////edit by mao
 	IplImage* pHandImg = cvCreateImage(cvSize(IMAGE_WIDTH, IMAGE_HEIGHT), IPL_DEPTH_8U, 1);
 	////////////////////////////////////////////////////edit by mao
-
+	
 #ifdef LINCCCC_DEBUG
 	if(showPic){
 		IplImage* pLabelImg2 = cvCreateImage(cvSize(IMAGE_WIDTH, IMAGE_HEIGHT), IPL_DEPTH_8U, 3);

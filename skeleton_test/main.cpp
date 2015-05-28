@@ -12,6 +12,10 @@ using namespace cv;
 
 int g_ImgIndex = 0;
 
+const int QVGA_WIDTH = 320,
+	QVGA_HEIGHT = 240,
+	MAX_VALID_DEPTH = 10000;
+
 bool checkOpenNIError(XnStatus rc, string status){
 	if(rc != XN_STATUS_OK){
 		cerr<<status<<" Error: "<<xnGetStatusString(rc)<<endl;
@@ -21,7 +25,9 @@ bool checkOpenNIError(XnStatus rc, string status){
 		return true;
 }//checkOpenNIError
 
-void main(){
+void main(int argc, char **argv){
+	float zoomFactor = 1;
+
 	clock_t begt,
 		seedSumt = 0,
 		sgfSeedSumt = 0,
@@ -31,13 +37,17 @@ void main(){
 	int frameCntr = 0;
 
 	XnStatus rc = XN_STATUS_OK;
-
+	
 	xn::Context ctx;
 	rc = ctx.Init();
 	if(!checkOpenNIError(rc, "init context"))
 		return;
 
 	const char *oniFname = "E:/oni_data/oni132x64/zc-walk-wo-feet-qvga.oni";
+	oniFname = "E:/oni_data/oni132_orig/sun_han_short.oni";
+	oniFname = "E:/oni_data/oni132x64/sgf_zc_w_feet.oni";
+	oniFname = "E:/oni_data/oni132x64/sgf_zc_w_feet-wo-overlap.oni";
+	
 	//oniFname = "E:/oni_data/oni132x64/zc-walk-wo-feet-qvga-107x.oni";
 	// 	oniFname = "E:/oni_data/oni132_orig/zc_indoor_walk.oni";
 	// 	oniFname = "E:/oni_data/oni132_orig/zc_indoor_walk-last.oni";
@@ -45,11 +55,9 @@ void main(){
 	//oniFname = "E:/oni_data/oni132x64/zc-stand-wo-feet-qvga.oni";
 
 	xn::Player plyr;
-	//plyr.SetRepeat(false);//无效
-	//plyr.SetSource 接口重复？：
-	//plyr.SetSource(XN_RECORD_MEDIUM_FILE, oniFname);
 	rc = ctx.OpenFileRecording(oniFname, plyr);
-	plyr.SetRepeat(false); //放在 OpenFileRecording 之后才有效
+	plyr.SeekToFrame("Depth1", std::stoi(argv[1]), XN_PLAYER_SEEK_SET);
+	plyr.SetRepeat(string(argv[2])=="true"); //放在 OpenFileRecording 之后才有效
 	if(!checkOpenNIError(rc, "ctx.OpenFileRecording"))
 		return;
 
@@ -60,13 +68,14 @@ void main(){
 	xn::DepthMetaData depthMD;
 
 	XnMapOutputMode mapMode;
-	mapMode.nXRes = 320;
-	mapMode.nYRes = 240;
+	mapMode.nXRes = QVGA_WIDTH;
+	mapMode.nYRes = QVGA_HEIGHT;
 	mapMode.nFPS = 30;
 	rc = dg.SetMapOutputMode(mapMode);
 	if(!checkOpenNIError(rc, "dg.SetMapOutputMode"))
-		//return;
-		;
+		dg.GetMapOutputMode(mapMode);
+	
+	zoomFactor = QVGA_WIDTH / mapMode.nXRes;
 
 	rc = ctx.StartGeneratingAll();
 	if(!checkOpenNIError(rc, "ctx.StartGeneratingAll"))
@@ -76,12 +85,17 @@ void main(){
 	while(key != 27){
 		frameCntr++;
 		//frameCntr = depthMD.FrameID(); //若计时用，不用 .FrameID
-		cout<<"frameCntr: "<<frameCntr<<endl;
+		int fid = depthMD.FrameID();
+		cout<<"frameCntr, fid: "<<frameCntr<<", "<<fid<<endl;
 
 		ctx.WaitAndUpdateAll();
 
 		dg.GetMetaData(depthMD);
 		Mat dm(depthMD.FullYRes(), depthMD.FullXRes(), CV_16UC1, (void*)depthMD.Data());
+		//临时去掉太深的杂乱背景，填充为最深：
+		dm.setTo(MAX_VALID_DEPTH, dm>4500);
+		//pyrDown(dm, dm, Size(dm.cols*zoomFactor, dm.rows*zoomFactor));
+
 		Mat dm_draw;
 		normalize(dm, dm_draw, UCHAR_MAX, 0, NORM_MINMAX, CV_8UC1);
 
@@ -116,16 +130,22 @@ void main(){
 // 				circle(dm_draw, vdMat.at<Point>(0), 5, 255, 2);
 // 			}
 		}
-		imshow("dm_draw", dm_draw);
+
+// 		imshow("dm_draw", dm_draw);
+// 		if(ZCDEBUG_WRITE)
+// 			imwrite("dm_draw_"+std::to_string((long long)fid)+".jpg", dm_draw);
 
 		//区域增长 thresh=50cm
 		begt = clock();
 		//纵向简单去掉屏幕下缘 1/4，即地面,防止脚部与地面连成一片：
-		int rgThresh = 333;
+		int rgThresh = 100;
 		Rect rgRoi(0, 0, dm.cols, dm.rows*3/4);
 		Mat fgMsk = zc::simpleRegionGrow(dm, seed, rgThresh, rgRoi, ZCDEBUG);
 		//cout<<"simpleRegionGrow.t: "<<clock()-begt<<endl;
 		rgSumt += (clock()-begt);
+		if(ZCDEBUG_WRITE)
+			imwrite("simpFlagMat_"+std::to_string((long long)fid)+".jpg", fgMsk);
+
 
 		//兼容林驰代码：
 		CapgSkeleton tSklt;
@@ -160,14 +180,90 @@ void main(){
 			sgf_headTemplatePath = "../../sgf_seed/headtemplate.bmp";
 		vector<Point> sgfSeeds = zc::getHeadSeeds(dm, 
 			sgf_configPath, sgf_headTemplatePath, ZCDEBUG);
-		cout<<"sgfSeeds.size(): "<<sgfSeeds.size()<<endl;
 		sgfSeedSumt += (clock()-begt);
+		cout<<"sgfSeeds.size(): "<<sgfSeeds.size()<<endl;
+		
 
 		for(size_t i=0; i<sgfSeeds.size(); i++){
 			Point sdi = sgfSeeds[i];
-			Mat fgMski = zc::simpleRegionGrow(dm, sdi, rgThresh, rgRoi, ZCDEBUG);
-			imshow("fgMski="+std::to_string((long long)i), fgMski);
+			circle(dm_draw, sdi, 9, 255, 2);
+
+// 			Mat fgMski = zc::simpleRegionGrow(dm, sdi, rgThresh, rgRoi, ZCDEBUG);
+// 			imshow("fgMski="+std::to_string((long long)i), fgMski);
 		}
+		imshow("dm_draw", dm_draw);
+		if(ZCDEBUG_WRITE)
+			imwrite("dm_draw_"+std::to_string((long long)fid)+".jpg", dm_draw);
+
+		Mat sgfFgMsk = zc::simpleRegionGrow(dm, sgfSeeds, rgThresh, rgRoi, ZCDEBUG);
+		imshow("sgfFgMsk", sgfFgMsk);
+
+		const int floorKrnlSz = 6;
+		int floorKrnlArr[floorKrnlSz] = {1,1,1,-1,-1,-1};
+		Mat floorKrnl(floorKrnlSz, 1, CV_32S, floorKrnlArr);
+		//cv::flip(floorKrnl, floorKrnl, 0);
+
+		Mat floorApartMat;
+		filter2D(dm, floorApartMat, CV_32F, floorKrnl);
+		imshow("floorApartMat", floorApartMat);
+		Mat floorApartMat_draw;
+		normalize(floorApartMat, floorApartMat_draw, UCHAR_MAX, 0, NORM_MINMAX, CV_8UC1);
+		imshow("floorApartMat_draw", floorApartMat_draw);
+
+		int anch = std::stoi(argv[3]);
+		Mat morphKrnl = getStructuringElement(MORPH_RECT, Size(anch*2+1, anch*2+1), Point(anch, anch) );
+		Mat sgfFgMsk_open;
+		morphologyEx(sgfFgMsk, sgfFgMsk_open, CV_MOP_OPEN, morphKrnl);
+		imshow("sgfFgMsk_open", sgfFgMsk_open);
+		sgfFgMsk = sgfFgMsk_open;
+		
+		if(ZCDEBUG_WRITE){
+			imwrite("sgfFgMsk_"+std::to_string((long long)fid)+".jpg", sgfFgMsk);
+			imwrite("sgfFgMsk_open_"+std::to_string((long long)fid)+".jpg", sgfFgMsk_open);
+		}
+
+		dm.convertTo(tmpDm, CV_32SC1);
+		//背景填充最大值，所以前景反而黑色：
+		tmpDm.setTo(INT_MAX, sgfFgMsk==0);
+		//imshow("tmpDm", tmpDm);
+		depthImg = tmpDm;
+
+		//因为predict是逐像素的，所以前景有多个人并不影响结果：
+		Mat labelMat = bpr->predict(&depthImg, nullptr, false, false);
+		imshow("labelMat", labelMat);
+		Mat rgbLabelMat = label_gray2rgb(labelMat);
+		imshow("rgbLabelMat", rgbLabelMat);
+
+		//将多人轮廓分割为 n*单人 mat：
+		vector<vector<Point> > contours;
+		vector<Vec4i> hierarchy;
+		findContours(sgfFgMsk, contours, hierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE);
+
+		size_t contSize = contours.size();
+		vector<vector<Point> > contours_poly(contSize);
+		vector<Rect> boundRect(contSize);
+		vector<Point2f> center(contSize);
+		vector<float> radius(contSize);
+
+		//计算 contours, bbox, enclosingCircle:
+		for(size_t i = 0; i < contSize; i++){
+			approxPolyDP((contours[i]), contours_poly[i], 3, true);
+			boundRect[i] = boundingRect(contours_poly[i]);
+			minEnclosingCircle(contours_poly[i], center[i], radius[i]);
+		}
+
+		//调试绘制
+		Mat contMat = Mat::zeros(sgfFgMsk.size(), CV_8UC1);
+		for(size_t i = 0; i < contSize; i++){
+			Scalar c(255);
+			drawContours(contMat, contours_poly, i, c, -1);
+			drawContours(contMat, contours, i, c);
+			rectangle(contMat, boundRect[i].tl(), boundRect[i].br(), c);
+			circle(contMat, center[i], radius[i], c);
+		}
+		imshow("contMat", contMat);
+		if(ZCDEBUG_WRITE)
+			imwrite("contMat_"+std::to_string((long long)fid)+".jpg", contMat);
 
 
 		key = waitKey(1);
