@@ -161,16 +161,32 @@ namespace zc{
 		return simpleRegionGrow(dmat, seeds, thresh, roi, debugDraw);
 	}//simpleRegionGrow
 
-	cv::Mat simpleRegionGrow( const Mat &dmat, vector<Point> seeds, int thresh, const Rect roi, bool debugDraw /*= false*/ ){
+	//预先用 roi 生成 mask
+	Mat simpleRegionGrow( const Mat &dmat, vector<Point> seeds, int thresh, const Rect roi, bool debugDraw /*= false*/ ){
+		Mat _mask = Mat::zeros(dmat.size(), CV_8UC1);
+		_mask(roi).setTo(UCHAR_MAX);
+
+		return simpleRegionGrow(dmat, seeds, thresh, _mask, debugDraw);
+	}//simpleRegionGrow
+
+	Mat simpleRegionGrow( const Mat &dmat, Point seed, int thresh, const Mat &mask, bool debugDraw /*= false*/ ){
+		vector<Point> seeds;
+		seeds.push_back(seed);
+
+		return simpleRegionGrow(dmat, seeds, thresh, mask, debugDraw);
+	}//simpleRegionGrow
+
+	Mat simpleRegionGrow(const Mat &dmat, vector<Point> seeds, int thresh, const Mat &mask, bool debugDraw /*= false*/){
+
 		Size sz = dmat.size();
 		int hh = sz.height,
 			ww = sz.width;
 
-		//实际进行区域增长的 roi：
-		int top = max(0, roi.y),
-			left = max(0, roi.x),
-			bottom = min(hh, roi.y + roi.height),
-			right = min(ww, roi.x + roi.width);
+// 		//实际进行区域增长的 roi：
+// 		int top = max(0, roi.y),
+// 			left = max(0, roi.x),
+// 			bottom = min(hh, roi.y + roi.height),
+// 			right = min(ww, roi.x + roi.width);
 
 		//1. init
 		//存标记：0未查看， 1在queue中， 255已处理过neibor；最终得到的正是 mask
@@ -179,10 +195,11 @@ namespace zc{
 		//存满足条件的点
 		queue<Point> pts;
 
-		//初始种子点入队&标记，需满足条件：在roi区域之内
+		//初始种子点入队&标记，需满足条件：mask 有效
 		for(size_t i=0; i<seeds.size(); i++){
 			Point sd = seeds[i];
-			if(roi.contains(sd)){
+			//if(roi.contains(sd)){
+			if(mask.at<uchar>(sd) == UCHAR_MAX){
 				flagMat.at<uchar>(sd) = 1;
 				pts.push(sd);
 			}
@@ -207,14 +224,16 @@ namespace zc{
 			pts.pop();
 			for (int i = 0; i < nnbr; i++){
 				Point npt = pt + Point(dx[i], dy[i]);
-				//纵向简单去掉地面,防止脚部与地面连成一片：
-				//if(0<=npt.x && npt.x<ww && 0<=npt.y && npt.y<hh*6/8)
-				if (left <= npt.x && npt.x < right && top <= npt.y && npt.y < bottom)
+				//roi 判断不要了：
+				//if (left <= npt.x && npt.x < right && top <= npt.y && npt.y < bottom)
+				if (Rect(Point(), dmat.size()).contains(npt))
 				{
 					const ushort& depNpt = dmat.at<ushort>(npt);
 					uchar& flgNpt = flagMat.at<uchar>(npt);
 					if (flgNpt == 0
-						&& abs(depPt - depNpt) <= thresh){
+						&& abs(depPt - depNpt) <= thresh
+						//增加mask 判断：
+						&& mask.at<uchar>(npt) == UCHAR_MAX){
 							//printf("val, nval: %d, %d\n", depPt, depNpt);
 							flgNpt = 1;
 							pts.push(npt);
@@ -248,7 +267,8 @@ namespace zc{
 		}
 
 		return flagMat;
-	}
+	}//simpleRegionGrow
+
 	cv::Mat postRegionGrow( const Mat &flagMat, int xyThresh, int zThresh, bool debugDraw /*= false*/ )
 	{
 		static Mat prevFlagMat;

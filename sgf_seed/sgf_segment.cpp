@@ -163,7 +163,8 @@ void segment::compute()
 	compute_edge(threshold_depth_min,threshold_depth_max);
 // 	imshow("depth edge",edge_map_thresh);
 // 	waitKey(1);
-	edge_map_thresh=edge_map_thresh+filter_edge;
+	//²»Òª¼Ó filter_edge
+	//edge_map_thresh=edge_map_thresh+filter_edge;
 // 	imshow("edge",edge_map_thresh);
 // 	waitKey(1);
 	threshold(edge_map_thresh,edge_map_thresh,128,255,THRESH_BINARY_INV);
