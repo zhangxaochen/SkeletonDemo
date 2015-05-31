@@ -11,8 +11,8 @@ namespace zc{
 #define FEATURE_PATH "../../../plugins/orbbec_skeleton/feature"
 #endif
 
-	static BPRecognizer *bpr = nullptr;
 	BPRecognizer* getBprAndLoadFeature(const string &featurePath){
+		static BPRecognizer *bpr = nullptr;
 		if (nullptr == bpr){
 			bpr = new BPRecognizer();
 			//string featurePath(FEATURE_PATH);
@@ -268,6 +268,84 @@ namespace zc{
 
 		return flagMat;
 	}//simpleRegionGrow
+
+	Mat getFloorApartMask( Mat dmat, bool debugDraw /*= false*/){
+		//分离地面滤波，做成mask：
+		int flrKrnlArr[] = {1,1,1,1,1, -1,-1,-1,-1,-1};
+		Mat flrKrnl((sizeof flrKrnlArr)/(sizeof flrKrnlArr[0]), 1, CV_32S, flrKrnlArr);
+		//cv::flip(flrKrnl, flrKrnl, 0);
+
+		Mat flrApartMat;
+		filter2D(dmat, flrApartMat, CV_32F, flrKrnl);
+		Mat flrApartMsk = abs(flrApartMat)<500;
+		//上半屏不管，防止手部、肩部被误删过滤：
+		flrApartMsk(Rect(0,0, dmat.cols, dmat.rows/2)).setTo(UCHAR_MAX);
+
+		if(debugDraw){
+			Rect flroi(60, 200, 10, 10);
+			//cout<<flrApartMat(flroi)<<endl;
+
+			//floorApartMat = cv::abs(floorApartMat);
+			flrApartMat.setTo(0, abs(flrApartMat)>2000);
+			rectangle(flrApartMat, flroi, 0);
+			imshow("floorApartMat", flrApartMat);
+
+			Mat flrApartMat_draw;
+			normalize(flrApartMat, flrApartMat_draw, 0, UCHAR_MAX, NORM_MINMAX, CV_8UC1);
+			imshow("flrApartMat_draw", flrApartMat_draw);
+			imshow("flrApartMsk", flrApartMsk);
+		}
+
+		return flrApartMsk;
+	}//getFloorApartMask
+
+	void drawOneSkeleton(Mat &img, CapgSkeleton &sk){
+		line(img, Point(sk[0].x(), sk[0].y()), Point(sk[1].x(), sk[1].y()), Scalar(0), 2);
+		line(img, Point(sk[1].x(), sk[1].y()), Point(sk[2].x(), sk[2].y()), Scalar(0), 2);
+		line(img, Point(sk[3].x(), sk[3].y()), Point(sk[4].x(), sk[4].y()), Scalar(0), 2);
+		line(img, Point(sk[4].x(), sk[4].y()), Point(sk[5].x(), sk[5].y()), Scalar(0), 2);
+		line(img, Point(sk[0].x(), sk[0].y()), Point(sk[3].x(), sk[3].y()), Scalar(0), 2);
+		line(img, Point(sk[6].x(), sk[6].y()), Point(sk[7].x(), sk[7].y()), Scalar(0), 2);
+
+		circle(img, Point(sk[8].x(), sk[8].y()), 2, Scalar(0), 2);
+		circle(img, Point(sk[11].x(), sk[11].y()), 2, Scalar(0), 2);
+		if(sk[8].x()!=0&&sk[8].y()!=0&&sk[11].x()!=0&&sk[11].y()!=0)
+		{
+			line(img, Point(sk[8].x(), sk[8].y()), Point(sk[11].x(), sk[11].y()), Scalar(0), 2);
+			line(img, Point(sk[7].x(), sk[7].y()),
+				Point((sk[8].x()+sk[11].x())/2, (sk[8].y()+sk[11].y())/2), Scalar(0), 2);
+		}
+	}//drawOneSkeleton
+
+	void drawSkeletons(Mat &img, const vector<CapgSkeleton> &sklts, int skltIdx){
+		if(skltIdx>=0){
+			CapgSkeleton sk = sklts[skltIdx];
+			drawOneSkeleton(img, sk);
+		}
+		else{
+			for(size_t i = 0; i < sklts.size(); i++){
+				CapgSkeleton sk = sklts[i];
+				drawOneSkeleton(img, sk);
+			}
+		}
+	}//drawSkeletons
+
+	//contours 引用， 会被修改
+	void eraseNonHumanContours(vector<vector<Point> > &contours){
+		vector<vector<Point> >::iterator it = contours.begin();
+		while(it != contours.end()){
+			if(isHumanContour(*it))
+				it++;
+			else
+				it = contours.erase(it);
+		}//while
+	}
+
+	bool isHumanContour(const vector<Point> &cont){
+		return cont.size() > 222;
+	}
+
+
 
 	cv::Mat postRegionGrow( const Mat &flagMat, int xyThresh, int zThresh, bool debugDraw /*= false*/ )
 	{
