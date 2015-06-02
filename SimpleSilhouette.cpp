@@ -154,29 +154,29 @@ namespace zc{
 
 	//zhangxaochen: simple region-grow, actually a flood fill method
 	// RETURN: a mask mat, foreground is white
-	Mat simpleRegionGrow(const Mat &dmat, Point seed, int thresh, const Rect roi, bool debugDraw){
+	Mat _simpleRegionGrow(const Mat &dmat, Point seed, int thresh, const Rect roi, bool debugDraw){
 		vector<Point> seeds;
 		seeds.push_back(seed);
 
-		return simpleRegionGrow(dmat, seeds, thresh, roi, debugDraw);
+		return _simpleRegionGrow(dmat, seeds, thresh, roi, debugDraw);
 	}//simpleRegionGrow
 
 	//预先用 roi 生成 mask
-	Mat simpleRegionGrow( const Mat &dmat, vector<Point> seeds, int thresh, const Rect roi, bool debugDraw /*= false*/ ){
+	Mat _simpleRegionGrow( const Mat &dmat, vector<Point> seeds, int thresh, const Rect roi, bool debugDraw /*= false*/ ){
 		Mat _mask = Mat::zeros(dmat.size(), CV_8UC1);
 		_mask(roi).setTo(UCHAR_MAX);
 
-		return simpleRegionGrow(dmat, seeds, thresh, _mask, debugDraw);
+		return _simpleRegionGrow(dmat, seeds, thresh, _mask, debugDraw);
 	}//simpleRegionGrow
 
-	Mat simpleRegionGrow( const Mat &dmat, Point seed, int thresh, const Mat &mask, bool debugDraw /*= false*/ ){
+	Mat _simpleRegionGrow( const Mat &dmat, Point seed, int thresh, const Mat &mask, bool debugDraw /*= false*/ ){
 		vector<Point> seeds;
 		seeds.push_back(seed);
 
-		return simpleRegionGrow(dmat, seeds, thresh, mask, debugDraw);
+		return _simpleRegionGrow(dmat, seeds, thresh, mask, debugDraw);
 	}//simpleRegionGrow
 
-	Mat simpleRegionGrow(const Mat &dmat, vector<Point> seeds, int thresh, const Mat &mask, bool debugDraw /*= false*/){
+	Mat _simpleRegionGrow(const Mat &dmat, vector<Point> seeds, int thresh, const Mat &mask, bool debugDraw /*= false*/){
 
 		Size sz = dmat.size();
 		int hh = sz.height,
@@ -269,6 +269,32 @@ namespace zc{
 		return flagMat;
 	}//simpleRegionGrow
 
+	vector<Mat> simpleRegionGrow(const Mat &dmat, vector<Point> seeds, int thresh, const Mat &mask, bool getMultiMasks /*= false*/, bool debugDraw /*= false*/){
+		vector<Mat> res;
+		if(!getMultiMasks){
+			Mat msk = _simpleRegionGrow(dmat, seeds, thresh, mask, debugDraw);
+			res.push_back(msk);
+		}
+		else{//getMultiMasks
+			size_t sdsz = seeds.size();
+			for(size_t i = 0; i < sdsz; i++){
+				Point sdi = seeds[i];
+
+				bool regionExists = false;
+				int regionCnt = res.size();
+				for(size_t i = 0; i < regionCnt; i++){
+					if(res[i].at<uchar>(sdi)==UCHAR_MAX)
+						regionExists = true;
+				}
+
+				//若sdi不存在于之前任何一个mask，则新增长一个：
+				if(!regionExists)
+					res.push_back(_simpleRegionGrow(dmat, sdi, thresh, mask, debugDraw));
+			}
+		}
+		return res;
+	}//simpleRegionGrow
+
 	Mat getFloorApartMask( Mat dmat, bool debugDraw /*= false*/){
 		//分离地面滤波，做成mask：
 		int flrKrnlArr[] = {1,1,1,1,1, -1,-1,-1,-1,-1};
@@ -343,7 +369,126 @@ namespace zc{
 
 	bool isHumanContour(const vector<Point> &cont){
 		return cont.size() > 222;
-	}
+	}//isHumanContour
+
+	//目前仅通过蒙板前景像素点个数判断
+	bool isHumanMask(const Mat &msk, int fgPxCntThresh /*= 1000*/){
+		int fgPxCnt = countNonZero(msk==UCHAR_MAX);
+		cout<<"fgPxCnt: "<<fgPxCnt<<endl;
+
+		return fgPxCnt > fgPxCntThresh;
+	}//isHumanMask
+
+	//1. 对 distMap 二值化得到 contours； 2. 对 contours bbox 判断长宽比，得到人体区域
+	Mat distMap2contours(const Mat &dmat, bool debugDraw /*= false*/){
+		static int frameCnt = 0;
+
+		Mat dm_draw,
+			edge_up,		//脚部与地面相连，上半身
+// 			edge_up_inv,	//黑色描边
+			edge_ft,		//脚部与地面分离，下半身
+// 			edge_ft_inv,	//黑色描边
+			edge_whole,		//上身+脚部，地面分离
+			edge_whole_inv,
+			distMap,
+			bwImg;			//宽黑边二值图
+		normalize(dmat, dm_draw, 0, UCHAR_MAX, NORM_MINMAX, CV_8UC1);
+
+		Canny(dm_draw, edge_up, 80, 160);
+// 		edge_up_inv = (edge_up==0);
+// 		if(debugDraw){
+// 			imshow("edge_up_inv", edge_up_inv);
+// 			imshow("edge_up", edge_up);
+// 		}
+
+		Mat flrApartMsk = getFloorApartMask(dmat);
+		Canny(flrApartMsk, edge_ft, 64, 128);
+// 		edge_ft_inv = (edge_ft==0);
+// 		if(debugDraw){
+// 			imshow("edge_ft_inv", edge_ft_inv);
+// 			imshow("edge_ft", edge_ft);
+// 		}
+
+		edge_whole = edge_up + edge_ft;
+		if(debugDraw){
+			imshow("edge_whole", edge_whole);
+			imwrite("edge_whole"+std::to_string((long long)frameCnt)+".jpg", edge_whole);
+		}
+
+		edge_whole_inv = (edge_whole==0);
+
+		static int distSumt = 0;
+		clock_t begt = clock();
+
+		//distMap 是 CV_32FC1
+		distanceTransform(edge_whole_inv, distMap, CV_DIST_L2, 3);
+		normalize(distMap, distMap, 0, UCHAR_MAX, NORM_MINMAX, CV_8UC1);
+		//对 distMap 二值化
+		threshold(distMap, bwImg, 20, 255, THRESH_BINARY);
+
+		distSumt += (clock()-begt);
+		std::cout<<"distSumt.rate: "<<1.*distSumt/(frameCnt+1)<<std::endl;
+
+		if(debugDraw){
+			imshow("distanceTransform.distMap", distMap);
+			imshow("threshold.distMap.bwImg", bwImg);
+			imwrite("threshold.distMap.bwImg"+std::to_string((long long)frameCnt)+".jpg", bwImg);
+		}
+
+		//open
+		static int anch = 4;
+		static Mat morphKrnl = getStructuringElement(MORPH_RECT, Size(anch*2+1, anch*2+1), Point(anch, anch) );
+		morphologyEx(bwImg, bwImg, CV_MOP_OPEN, morphKrnl);
+		if(debugDraw){
+			imshow("CV_MOP_OPEN.threshold.bwImg", bwImg);
+			imwrite("CV_MOP_OPEN.threshold.bwImg"+std::to_string((long long)frameCnt)+".jpg", bwImg);
+		}
+
+		//对 edge erode， 与distMap 二值化会有什么区别？MORPH_ELLIPSE 时几乎完全相同
+// 		static int erosion_size = 4,
+// 			erosion_type = MORPH_RECT;
+// 		static Mat erodeKrnl = getStructuringElement( erosion_type,
+// 			Size( 2*erosion_size + 1, 2*erosion_size+1 ),
+// 			Point( erosion_size, erosion_size ) );
+
+		static int erodeSumt = 0;
+		/*clock_t*/ begt = clock();
+		erode(edge_whole_inv, edge_whole_inv, morphKrnl);
+		erodeSumt += (clock()-begt);
+		std::cout<<"+++++++++++++++erodeSumt.rate: "<<1.*erodeSumt/(frameCnt+1)<<std::endl;
+
+		bwImg = edge_whole_inv;
+		if(debugDraw){
+			imshow("edge_whole_inv.erode.bwImg", edge_whole_inv);
+			imwrite("edge_whole_inv.erode.bwImg"+std::to_string((long long)frameCnt)+".jpg", edge_whole_inv);
+		}
+
+		vector<vector<Point> > contours;
+		vector<Vec4i> hierarchy;
+		findContours(bwImg, contours, hierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_NONE);
+
+		Mat cont_draw = Mat::zeros(dmat.size(), CV_8UC1);
+		//drawContours(cont_draw, contours, -1, 255, -1);
+
+		int contSz = contours.size();
+		//vector<Rect> boundRect(contSz);
+		for(size_t i = 0; i < contSz; i++){
+			Rect boundRect = boundingRect(contours[i]);
+			//boundRect[i] = boundingRect(contours[i]);
+			Size bsz = boundRect.size();
+			if(bsz.height*1./bsz.width > 1.5 && bsz.height > 60){
+				drawContours(cont_draw, contours, i, 255, -1);
+				if(debugDraw)
+					rectangle(cont_draw, boundRect, 255);
+			}
+		}
+		if(debugDraw)
+			imshow("cont_draw", cont_draw);
+
+		frameCnt++;
+		//return distMap;
+		return cont_draw;
+	}//distMap2contours
 
 
 

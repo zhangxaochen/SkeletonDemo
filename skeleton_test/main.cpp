@@ -18,10 +18,12 @@ int g_ImgIndex = 0;
 clock_t begt,
 	seedSumt = 0,
 	sgfSeedSumt = 0,
+	rg2msksSumt = 0,
 	rgSumt = 0,
 	predAndMergeSumt = 0,
 	predictSumt = 0,
-	cannySumt = 0;
+	cannySumt = 0,
+	distMap2contoursSumt = 0;
 
 const int QVGA_WIDTH = 320,
 	QVGA_HEIGHT = 240,
@@ -75,7 +77,7 @@ void nmhSilhouAndSklt( Mat &dm, int fid ){
 	begt = clock();
 	//纵向简单去掉屏幕下缘 1/4，即地面,防止脚部与地面连成一片：
 	Rect rgRoi(0, 0, dm.cols, dm.rows*3/4);
-	Mat fgMsk = zc::simpleRegionGrow(dm, seed, rgThresh, rgRoi, ZCDEBUG);
+	Mat fgMsk = zc::_simpleRegionGrow(dm, seed, rgThresh, rgRoi, ZCDEBUG);
 	//cout<<"simpleRegionGrow.t: "<<clock()-begt<<endl;
 	rgSumt += (clock()-begt);
 	if(ZCDEBUG_WRITE)
@@ -175,6 +177,14 @@ void main(int argc, char **argv){
 
 		dg.GetMetaData(depthMD);
 		Mat dm(depthMD.FullYRes(), depthMD.FullXRes(), CV_16UC1, (void*)depthMD.Data());
+
+		begt = clock();
+		Mat cont_draw = zc::distMap2contours(dm, ZCDEBUG);
+		if(ZCDEBUG_WRITE)
+			imwrite("cont_draw_"+std::to_string((long long)fid)+".jpg", cont_draw);
+
+		distMap2contoursSumt += (clock()-begt);
+
 		//临时去掉太深的杂乱背景，填充为最深：
 		//dm.setTo(MAX_VALID_DEPTH, dm>6000);
 		//pyrDown(dm, dm, Size(dm.cols*zoomFactor, dm.rows*zoomFactor));
@@ -204,122 +214,215 @@ void main(int argc, char **argv){
 
 		Mat flrApartMsk = zc::getFloorApartMask(dm, ZCDEBUG);
 
-		Mat sgfFgMsk = zc::simpleRegionGrow(dm, sgfSeeds, rgThresh, flrApartMsk, ZCDEBUG);
-		imshow("2-sgfFgMsk", sgfFgMsk);
+		//+++++++++++++++
+		begt = clock();
+		vector<Mat> fgMsks = zc::simpleRegionGrow(dm, sgfSeeds, rgThresh, flrApartMsk, true, ZCDEBUG);
+		rg2msksSumt += (clock()-begt);
+		int regionCnt = fgMsks.size();
+// 		Mat fgMsksSum = fgMsks[0];
+// 		for(size_t i=1; i<regionCnt; i++)
+// 			fgMsksSum += fgMsks[i];
+// 		imshow("fgMsksSum", fgMsksSum);
 
-// 轮廓开操作，判定哪些是人， 依据： 1. bbox长宽比， 2. bbox.height 物理尺寸。【未完成】
+		for(size_t i=0; i<regionCnt; i++){
+			if(ZCDEBUG)
+				imshow("fgMsks-"+std::to_string((long long)i), fgMsks[i]);
+			if(ZCDEBUG_WRITE)
+				imwrite("fgMsks-"+std::to_string((long long)i)+"_"+std::to_string((long long)fid)+".jpg", fgMsks[i]);
+		}
+
 		int anch = std::stoi(argv[3]);
 		Mat morphKrnl = getStructuringElement(MORPH_RECT, Size(anch*2+1, anch*2+1), Point(anch, anch) );
-		Mat sgfFgMsk_open;
-		morphologyEx(sgfFgMsk, sgfFgMsk_open, CV_MOP_OPEN, morphKrnl);
-		imshow("3-sgfFgMsk_open", sgfFgMsk_open);
- 		
- 		if(ZCDEBUG_WRITE){
- 			imwrite("2-sgfFgMsk_"+std::to_string((long long)fid)+".jpg", sgfFgMsk);
- 			imwrite("3-sgfFgMsk_open_"+std::to_string((long long)fid)+".jpg", sgfFgMsk_open);
- 		}
-
-		sgfFgMsk = sgfFgMsk_open;
-
-		//兼容林驰代码：
-		Mat tmpDm;
-		dm.convertTo(tmpDm, CV_32SC1);
-		//背景填充最大值，所以前景反而黑色：
-		tmpDm.setTo(INT_MAX, sgfFgMsk==0);
-		//imshow("tmpDm", tmpDm);
-
-		IplImage depthImg = tmpDm;
-		bool useDense = false,
-			useErode = false,
-			usePre = true;
-
-		string featurePath = "../../feature";
-		BPRecognizer *bpr = zc::getBprAndLoadFeature(featurePath);
-
-		//因为predict是逐像素的，所以一个mask包含多人前景并不影响结果：
-		begt = clock();
-		Mat labelMat = bpr->predict(&depthImg, nullptr, useDense, usePre);
-		predictSumt += (clock()-begt);
-
-		if(ZCDEBUG){
-			imshow("labelMat", labelMat);
-			Mat rgbLabelMat = label_gray2rgb(labelMat);
-			imshow("6-rgbLabelMat", rgbLabelMat);
-			if(ZCDEBUG_WRITE)
-				imwrite("6-rgbLabelMat_"+std::to_string((long long)fid)+".jpg", rgbLabelMat);
-		}
-
-		//将多人轮廓分割为 n*单人 mat：
-		vector<vector<Point> > contours;
-		vector<Vec4i> hierarchy;
-		findContours(sgfFgMsk, contours, hierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_NONE);
-
-		cout<<"contours.size(): "<<contours.size()<<endl;
-		const size_t origContSize = contours.size();
-		for(size_t i = 0; i < origContSize; i++)
-			cout<<"i: "<<i<<", "<<contours[i].size()<<endl;
-		
-		if(contours.size()>2)
-			int dumb = 0;
-		zc::eraseNonHumanContours(contours);
-		cout<<"eraseNonHumanContours.size(): "<<contours.size()<<endl;
-
-		const size_t contSize = contours.size();
-		vector<vector<Point> > contours_poly(contSize);
-		vector<Rect> boundRect(contSize);
-		vector<Point2f> center(contSize);
-		vector<float> radius(contSize);
 
 		vector<CapgSkeleton> sklts;
-		
-		//调试绘制
-		Mat contMat = Mat::zeros(sgfFgMsk.size(), CV_8UC1);
+		for(size_t ir=0; ir<regionCnt; ir++){
+			Mat soloFgMsk = fgMsks[ir];
 
-		for(size_t i = 0; i < contSize; i++){
-			approxPolyDP((contours[i]), contours_poly[i], 3, true);
+			imshow("soloFgMsk-"+std::to_string((long long)ir), soloFgMsk);
 
-			//单人
-			Mat soloContMask = Mat::zeros(sgfFgMsk.size(), CV_8UC1);
-			drawContours(soloContMask, contours_poly, i, 255, -1);
-			Mat soloLabelMat = labelMat.clone();
-			soloLabelMat.setTo(BodyLabel_Background, soloContMask==0);
+			//open, 找最大cont, 如果是人，则predict得到sklt：
+			morphologyEx(soloFgMsk, soloFgMsk, CV_MOP_OPEN, morphKrnl);
 
-			bool useErode = false,
-				usePre = false;
+			vector<vector<Point> > contours;
+			vector<Vec4i> hierarchy;
+			findContours(soloFgMsk, contours, hierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_NONE);
+			size_t contSz = contours.size();
 
-			CapgSkeleton tSklt;
-			bpr->mergeJoint(new IplImage(soloLabelMat), &depthImg, tSklt, useErode, usePre);
-			sklts.push_back(tSklt);
+			//可能开操作之后图变成全黑：
+			if(0==contSz)
+				continue;
 
-			if(ZCDEBUG){
-				//计算 bbox, enclosingCircle:
-				boundRect[i] = boundingRect(contours_poly[i]);
-				minEnclosingCircle(contours_poly[i], center[i], radius[i]);
-				//调试绘制
-				Scalar c(255);
-				drawContours(contMat, contours_poly, i, c, -1);
-				drawContours(contMat, contours, i, c);
-				rectangle(contMat, boundRect[i].tl(), boundRect[i].br(), c);
-				circle(contMat, center[i], radius[i], c);
-
-				Mat soloRgbLabelMat = label_gray2rgb(soloLabelMat);
-				imshow("5-soloContMask-"+std::to_string((long long)i), soloContMask);
-				imshow("7-soloRgbLabelMat-"+std::to_string((long long)i), soloRgbLabelMat);
-				cout<<"===tSklt.size(): "<<tSklt.size()<<", "<<contours[i].size()<<", "<<contours_poly[i].size()<<endl;
-
-				if(ZCDEBUG_WRITE){
-					imwrite("5-soloContMask-"+std::to_string((long long)i)+"_"+std::to_string((long long)fid)+".jpg", soloContMask);
-					imwrite("7-soloRgbLabelMat-"+std::to_string((long long)i)+"_"+std::to_string((long long)fid)+".jpg", soloRgbLabelMat);
+			int contMaxCnt = 0, idx = 0;
+			for(size_t ic = 0; ic < contSz; ic++){
+				if(contours[ic].size() > contMaxCnt){
+					idx = ic;
+					contMaxCnt = contours[ic].size();
 				}
 			}
-		}
-		imshow("4-contMat", contMat);
-		if(ZCDEBUG_WRITE)
-			imwrite("4-contMat_"+std::to_string((long long)fid)+".jpg", contMat);
+// 			if(idx==-1)
+// 				int dummy = 0;
+			//vector<Point> &theCont = contours[idx];
+			if(zc::isHumanContour(contours[idx])){
+				
+				Mat soloContMask = Mat::zeros(dm.size(), CV_8UC1);
+				drawContours(soloContMask, contours, idx, 255, -1);
+
+				//兼容林驰代码：
+				Mat tmpDm;
+				dm.convertTo(tmpDm, CV_32SC1);
+				//背景填充最大值，所以前景反而黑色：
+				tmpDm.setTo(INT_MAX, soloContMask==0);
+				//imshow("tmpDm", tmpDm);
+
+				IplImage depthImg = tmpDm;
+				bool useDense = false,
+					useErode = false,
+					usePre = true;
+
+				string featurePath = "../../feature";
+				BPRecognizer *bpr = zc::getBprAndLoadFeature(featurePath);
+
+				//因为predict是逐像素的，所以一个mask包含多人前景并不影响结果：
+				begt = clock();
+				Mat soloLabelMat = bpr->predict(&depthImg, nullptr, useDense, usePre);
+				predictSumt += (clock()-begt);
+
+				if(ZCDEBUG){
+					Mat rgbSoloLabelMat = label_gray2rgb(soloLabelMat);
+					imshow("rgbSoloLabelMat-"+std::to_string((long long)ir), rgbSoloLabelMat);
+					if(ZCDEBUG_WRITE)
+						imwrite("rgbSoloLabelMat-"+std::to_string((long long)ir)+"_"+std::to_string((long long)fid)+".jpg", rgbSoloLabelMat);
+				}
+
+				useErode = false;
+				usePre = false;
+
+				CapgSkeleton tSklt;
+				bpr->mergeJoint(new IplImage(soloLabelMat), &depthImg, tSklt, useErode, usePre);
+				sklts.push_back(tSklt);
+			}//if(isHumanContour(contours[idx]))
+			
+		}//for(size_t ir=0; ir<regionCnt; ir++)
+		
+		//+++++++++++++++
+
+
+// 		Mat sgfFgMsk = zc::_simpleRegionGrow(dm, sgfSeeds, rgThresh, flrApartMsk, ZCDEBUG);
+// 		imshow("2-sgfFgMsk", sgfFgMsk);
+// 
+// // 轮廓开操作，判定哪些是人， 依据： 1. bbox长宽比， 2. bbox.height 物理尺寸。【未完成】
+// // 		int anch = std::stoi(argv[3]);
+// // 		Mat morphKrnl = getStructuringElement(MORPH_RECT, Size(anch*2+1, anch*2+1), Point(anch, anch) );
+// 		Mat sgfFgMsk_open;
+// 		morphologyEx(sgfFgMsk, sgfFgMsk_open, CV_MOP_OPEN, morphKrnl);
+// 		imshow("3-sgfFgMsk_open", sgfFgMsk_open);
+//  		
+//  		if(ZCDEBUG_WRITE){
+//  			imwrite("2-sgfFgMsk_"+std::to_string((long long)fid)+".jpg", sgfFgMsk);
+//  			imwrite("3-sgfFgMsk_open_"+std::to_string((long long)fid)+".jpg", sgfFgMsk_open);
+//  		}
+// 
+// 		sgfFgMsk = sgfFgMsk_open;
+// 
+// 		//兼容林驰代码：
+// 		Mat tmpDm;
+// 		dm.convertTo(tmpDm, CV_32SC1);
+// 		//背景填充最大值，所以前景反而黑色：
+// 		tmpDm.setTo(INT_MAX, sgfFgMsk==0);
+// 		//imshow("tmpDm", tmpDm);
+// 
+// 		IplImage depthImg = tmpDm;
+// 		bool useDense = false,
+// 			useErode = false,
+// 			usePre = true;
+// 
+// 		string featurePath = "../../feature";
+// 		BPRecognizer *bpr = zc::getBprAndLoadFeature(featurePath);
+// 
+// 		//因为predict是逐像素的，所以一个mask包含多人前景并不影响结果：
+// 		begt = clock();
+// 		Mat labelMat = bpr->predict(&depthImg, nullptr, useDense, usePre);
+// 		predictSumt += (clock()-begt);
+// 
+// 		if(ZCDEBUG){
+// 			imshow("labelMat", labelMat);
+// 			Mat rgbLabelMat = label_gray2rgb(labelMat);
+// 			imshow("6-rgbLabelMat", rgbLabelMat);
+// 			if(ZCDEBUG_WRITE)
+// 				imwrite("6-rgbLabelMat_"+std::to_string((long long)fid)+".jpg", rgbLabelMat);
+// 		}
+// 
+// 		//将多人轮廓分割为 n*单人 mat：
+// 		vector<vector<Point> > contours;
+// 		vector<Vec4i> hierarchy;
+// 		findContours(sgfFgMsk, contours, hierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_NONE);
+// 
+// 		cout<<"contours.size(): "<<contours.size()<<endl;
+// 		const size_t origContSize = contours.size();
+// 		for(size_t i = 0; i < origContSize; i++)
+// 			cout<<"i: "<<i<<", "<<contours[i].size()<<endl;
+// 		
+// 		if(contours.size()>2)
+// 			int dummy = 0;
+// 		zc::eraseNonHumanContours(contours);
+// 		cout<<"eraseNonHumanContours.size(): "<<contours.size()<<endl;
+// 
+// 		const size_t contSize = contours.size();
+// 		vector<vector<Point> > contours_poly(contSize);
+// 		vector<Rect> boundRect(contSize);
+// 		vector<Point2f> center(contSize);
+// 		vector<float> radius(contSize);
+// 
+// 		vector<CapgSkeleton> sklts;
+// 		
+// 		//调试绘制
+// 		Mat contMat = Mat::zeros(sgfFgMsk.size(), CV_8UC1);
+// 
+// 		for(size_t i = 0; i < contSize; i++){
+// 			approxPolyDP((contours[i]), contours_poly[i], 3, true);
+// 
+// 			//单人
+// 			Mat soloContMask = Mat::zeros(sgfFgMsk.size(), CV_8UC1);
+// 			drawContours(soloContMask, contours_poly, i, 255, -1);
+// 			Mat soloLabelMat = labelMat.clone();
+// 			soloLabelMat.setTo(BodyLabel_Background, soloContMask==0);
+// 
+// 			bool useErode = false,
+// 				usePre = false;
+// 
+// 			CapgSkeleton tSklt;
+// 			bpr->mergeJoint(new IplImage(soloLabelMat), &depthImg, tSklt, useErode, usePre);
+// 			sklts.push_back(tSklt);
+// 
+// 			if(ZCDEBUG){
+// 				//计算 bbox, enclosingCircle:
+// 				boundRect[i] = boundingRect(contours_poly[i]);
+// 				minEnclosingCircle(contours_poly[i], center[i], radius[i]);
+// 				//调试绘制
+// 				Scalar c(255);
+// 				drawContours(contMat, contours_poly, i, c, -1);
+// 				drawContours(contMat, contours, i, c);
+// 				rectangle(contMat, boundRect[i].tl(), boundRect[i].br(), c);
+// 				circle(contMat, center[i], radius[i], c);
+// 
+// 				Mat soloRgbLabelMat = label_gray2rgb(soloLabelMat);
+// 				imshow("5-soloContMask-"+std::to_string((long long)i), soloContMask);
+// 				imshow("7-soloRgbLabelMat-"+std::to_string((long long)i), soloRgbLabelMat);
+// 				cout<<"===tSklt.size(): "<<tSklt.size()<<", "<<contours[i].size()<<", "<<contours_poly[i].size()<<endl;
+// 
+// 				if(ZCDEBUG_WRITE){
+// 					imwrite("5-soloContMask-"+std::to_string((long long)i)+"_"+std::to_string((long long)fid)+".jpg", soloContMask);
+// 					imwrite("7-soloRgbLabelMat-"+std::to_string((long long)i)+"_"+std::to_string((long long)fid)+".jpg", soloRgbLabelMat);
+// 				}
+// 			}
+// 		}
+// 		imshow("4-contMat", contMat);
+// 		if(ZCDEBUG_WRITE)
+// 			imwrite("4-contMat_"+std::to_string((long long)fid)+".jpg", contMat);
 
 		cout<<"sklts.size(): "<<sklts.size()<<endl;
 
-		Mat skCanvas = Mat::ones(sgfFgMsk.size(), CV_8UC1)*UCHAR_MAX;
+		Mat skCanvas = Mat::ones(dm.size(), CV_8UC1)*UCHAR_MAX;
 		zc::drawSkeletons(skCanvas, sklts, -1);
 		if(ZCDEBUG){
 			imshow("8-skCanvas", skCanvas);
@@ -327,14 +430,19 @@ void main(int argc, char **argv){
 				imwrite("8-skCanvas_"+std::to_string((long long)fid)+".jpg", skCanvas);
 		}
 
+		if(fid>113)
+			waitKey(0);
 		key = waitKey(01);
 	}//while
 
 	//统计几个平均时间(ms)：
-	cout<<"frameCntr, seedSumt, sgfSeedSumt, rgSumt, cannySumt, predAndMergeSumt, predictSumt: "
+	cout<<"frameCntr:: seedSumt, sgfSeedSumt, rg2msksSumt, rgSumt, cannySumt, predAndMergeSumt, predictSumt, distMap2contoursSumt: "
 		<<frameCntr<<":: "
 		<<seedSumt*1./frameCntr<<", "<<sgfSeedSumt*1./frameCntr<<", "
-		<<rgSumt*1./frameCntr<<", "<<cannySumt*1./frameCntr<<", "<<predAndMergeSumt*1./frameCntr<<", "<<predictSumt*1./frameCntr<<endl;
+		<<rg2msksSumt*1./frameCntr<<", "<<rgSumt*1./frameCntr<<", "<<cannySumt*1./frameCntr<<", "
+		<<predAndMergeSumt*1./frameCntr<<", "<<predictSumt*1./frameCntr<<", "
+		<<distMap2contoursSumt*1./frameCntr<<", "
+		<<endl;
 
 	destroyAllWindows();
 	ctx.StopGeneratingAll();
