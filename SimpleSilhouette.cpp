@@ -689,7 +689,7 @@ namespace zc{
 			drawContours(cont_mask, dtrans_cont_good, i, 255, -1);
 			//Z轴上下界：
 			double dmin, dmax;
-			minMaxLoc(dmat, &dmin, &dmax, nullptr, nullptr, cont_mask);
+			minMaxLoc(dmat, &dmin, &dmax, nullptr, nullptr, cont_mask & dmat!=0);
 			
 			//补充一个判断条件: mask 深度值域不能 >1500mm
 			if(dmax-dmin > 1500)
