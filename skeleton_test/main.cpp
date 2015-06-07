@@ -10,7 +10,8 @@
 using namespace std;
 using namespace cv;
 
-#define ZCDEBUG 1
+#define ZCDEBUG_LV1 1	//显示关键结果图
+#define ZCDEBUG_LV2 0	//显示某些中间结果图
 #define ZCDEBUG_WRITE 1
 
 int g_ImgIndex = 0;
@@ -25,9 +26,6 @@ clock_t begt,
 	cannySumt = 0,
 	distMap2contoursSumt = 0;
 
-const int QVGA_WIDTH = 320,
-	QVGA_HEIGHT = 240,
-	MAX_VALID_DEPTH = 10000;
 
 Mat dm_draw;
 int rgThresh = 55;
@@ -53,18 +51,18 @@ void nmhSilhouAndSklt( Mat &dm, int fid ){
 	// 		imshow("canny", edge);
 
 	//时序上前后帧求 abs(sub)
-	Mat currPreDiffMsk = zc::simpleMask(dm, ZCDEBUG);
+	Mat currPreDiffMsk = zc::simpleMask(dm, ZCDEBUG_LV1);
 
 	//种子点寻找：
 	begt = clock();
 	int veryDepth = -1;
-	Point seed = zc::simpleSeed(dm, &veryDepth, ZCDEBUG);
+	Point seed = zc::simpleSeed(dm, &veryDepth, ZCDEBUG_LV1);
 	//cout<<"simpleSeed.t: "<<clock()-begt<<endl;
 	seedSumt += (clock()-begt);
 
 	circle(dm_draw, seed, 3, 255, 2);
 
-	if(ZCDEBUG){
+	if(ZCDEBUG_LV1){
 		Mat vdMat;
 		findNonZero(dm==veryDepth, vdMat);
 		printf("vdMat.total(): %d\n", vdMat.total());
@@ -77,7 +75,7 @@ void nmhSilhouAndSklt( Mat &dm, int fid ){
 	begt = clock();
 	//纵向简单去掉屏幕下缘 1/4，即地面,防止脚部与地面连成一片：
 	Rect rgRoi(0, 0, dm.cols, dm.rows*3/4);
-	Mat fgMsk = zc::_simpleRegionGrow(dm, seed, rgThresh, rgRoi, ZCDEBUG);
+	Mat fgMsk = zc::_simpleRegionGrow(dm, seed, rgThresh, rgRoi, ZCDEBUG_LV1);
 	//cout<<"simpleRegionGrow.t: "<<clock()-begt<<endl;
 	rgSumt += (clock()-begt);
 	if(ZCDEBUG_WRITE)
@@ -106,7 +104,7 @@ void nmhSilhouAndSklt( Mat &dm, int fid ){
 	// 		printf("labelMat.depth(): %d, %d, %d\n", labelMat.depth(), labelMat.channels(), labelMat.type()); //0, 1, 0
 
 	begt = clock();
-	bpr->predictAndMergeJoint(&depthImg, tSklt, &maskImg, false, false, ZCDEBUG);
+	bpr->predictAndMergeJoint(&depthImg, tSklt, &maskImg, false, false, ZCDEBUG_LV1);
 	predAndMergeSumt  += (clock()-begt);
 }//nmhSilhouAndSklt
 
@@ -130,6 +128,9 @@ void main(int argc, char **argv){
 	oniFname = "E:/oni_data/oni132x64/sgf_zc_w_feet.oni";
 	oniFname = "E:/oni_data/oni132x64/sgf_zc_w_feet-190-3xx.oni";
 	oniFname = "E:/oni_data/oni132x64/sgf_zc_w_feet-650-776.oni";
+	oniFname = "E:/oni_data/oni132x64/sgf_zc_w_feet-372-591.oni";
+	
+	//oniFname = "E:/oni_data/oni132x64/sgf-zc-sit-front-desk.oni";
 	
 	//oniFname = "E:/oni_data/oni132x64/sgf_zc_w_feet-wo-overlap.oni";
 	
@@ -178,12 +179,140 @@ void main(int argc, char **argv){
 		dg.GetMetaData(depthMD);
 		Mat dm(depthMD.FullYRes(), depthMD.FullXRes(), CV_16UC1, (void*)depthMD.Data());
 
+#pragma region //测试 distMap2contours[Debug], dmat2TopDownView[Debug]
 		begt = clock();
-		Mat cont_draw = zc::distMap2contours(dm, ZCDEBUG);
-		if(ZCDEBUG_WRITE)
-			imwrite("cont_draw_"+std::to_string((long long)fid)+".jpg", cont_draw);
-
+		Mat cont_draw = zc::distMap2contoursDebug(dm, ZCDEBUG_LV1);
 		distMap2contoursSumt += (clock()-begt);
+
+		if(ZCDEBUG_LV1){
+			imshow("cont_draw", cont_draw);
+			if(ZCDEBUG_WRITE)
+				imwrite("cont_draw_"+std::to_string((long long)fid)+".jpg", cont_draw);
+		}
+		
+		//测试对比两个函数distMap2contours， distMap2contoursDebug实现是否一致：
+		vector<vector<Point> > distMapContGood = zc::distMap2contours(dm, ZCDEBUG_LV1);
+		Mat dist_cont_draw_good = Mat::zeros(dm.size(), CV_8UC1);
+		drawContours(dist_cont_draw_good, distMapContGood, -1, 255, -1);
+		if(ZCDEBUG_LV1){
+			imshow("dist_cont_draw_good", dist_cont_draw_good);
+		}
+
+		static int topDownViewSumt = 0;
+		begt = clock();
+		Mat topDownView = zc::dmat2TopDownViewDebug(dm, ZCDEBUG_LV1);
+
+		int anch = std::stoi(argv[3]);
+		Mat morphKrnl = getStructuringElement(MORPH_RECT, Size(anch*2+1, anch*2+1), Point(anch, anch) );
+		morphologyEx(topDownView, topDownView, CV_MOP_CLOSE, morphKrnl);
+
+		topDownViewSumt += (clock()-begt);
+		if(ZCDEBUG_LV1){
+			cout<<"topDownViewSumt.rate: "<<1.*topDownViewSumt/frameCntr<<endl;
+			imshow("topDownView", topDownView);
+			if(ZCDEBUG_WRITE)
+				imwrite("topDownView_"+std::to_string((long long)fid)+".jpg", topDownView);
+		}
+
+		//top-down view 上通过 bbox 经验阈值找人：
+		vector<vector<Point> > tdvContours;
+		vector<Vec4i> tdvHierarchy;
+		findContours(topDownView, tdvContours, tdvHierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_NONE);
+		if(ZCDEBUG_LV1){
+			Mat tdvCont_draw = Mat::zeros(topDownView.size(), CV_8UC1);
+			size_t tdvContSize = tdvContours.size();
+			for(size_t i = 0; i < tdvContSize; i++){
+				drawContours(tdvCont_draw, tdvContours, i, 255, -1);
+				Rect boundRect = boundingRect(tdvContours[i]);
+				//Size bsz = boundRect.size();
+				cout<<"tdvContours.boundRect: "<<boundRect<<"; "
+					<<boundRect.height * MAX_VALID_DEPTH*1. / UCHAR_MAX<<", "<<boundRect.width * MAX_VALID_DEPTH*1. / UCHAR_MAX<<endl;
+
+				//1. Z厚度判定 >3px(3*10000mm/256=117mm), <26(26*10000mm/256=1016mm)； 
+				//2. X宽度判定 (200mm~2000mm) MAX_VALID_DEPTH / UCHAR_MAX / XTION_FOCAL_XY = 1/7.68
+				if(3 <= boundRect.height && boundRect.height < 26
+					//&& 1.*MAX_VALID_DEPTH/UCHAR_MAX * boundRect.y / XTION_FOCAL_XY * boundRect.width < 2000 //y * width < 7.68*2000mm
+					&& 7.68*200 < boundRect.y * boundRect.width && boundRect.y * boundRect.width < 7.68*2000)
+				{
+					rectangle(tdvCont_draw, boundRect, 255, 2);
+					cout<<"↑"<<endl;
+				}
+				else
+					rectangle(tdvCont_draw, boundRect, 255);
+			}
+			drawContours(tdvCont_draw, tdvContours, -1, 255, -1);
+
+			imshow("tdvCont_draw", tdvCont_draw);
+			if(ZCDEBUG_WRITE)
+				imwrite("tdvCont_draw_"+std::to_string((long long)fid)+".jpg", tdvCont_draw);
+
+		}
+
+		vector<vector<Point>> tdv_cont_good = zc::dmat2TopDownView(dm, ZCDEBUG_LV1);
+		Mat tdv_cont_good_draw = Mat::zeros(dm.size(), CV_8UC1);
+		drawContours(tdv_cont_good_draw, tdv_cont_good, -1, 255, -1);
+		if(ZCDEBUG_LV1){
+			imshow("tdv_cont_good_draw", tdv_cont_good_draw);
+		}
+
+		//---------------在top-down-view 上同时画两种 contours, bbox, 观察求交结果
+		if(ZCDEBUG_LV1){
+			Mat tdvCont_draw_cross = Mat::zeros(topDownView.size(), CV_8UC1);
+
+			//tdview 实心cont， bbox， 128灰色画
+			size_t tdv_cont_good_size = tdv_cont_good.size();
+			Scalar gray_c = 128;
+			for(size_t i = 0; i < tdv_cont_good_size; i++){
+				drawContours(tdvCont_draw_cross, tdv_cont_good, i, gray_c, -1);
+				Rect tmp_rect = boundingRect(tdv_cont_good[i]);
+				rectangle(tdvCont_draw_cross, tmp_rect, gray_c, 2);
+			}
+
+
+			//dist-map 转换XZ轴后的bbox
+			size_t dtrans_cont_size = distMapContGood.size();
+			for(size_t i = 0; i < dtrans_cont_size; i++){
+				Mat cont_mask = Mat::zeros(dm.size(), CV_8UC1);
+				drawContours(cont_mask, distMapContGood, i, 255, -1);
+				//Z轴上下界：
+				double dmin, dmax;
+				minMaxLoc(dm, &dmin, &dmax, nullptr, nullptr, cont_mask);
+				//补充一个判断条件: mask 深度值域不能 >1500mm
+				if(dmax-dmin > 1500)
+					continue;
+
+				//缩放比 MAX_VALID_DEPTH / UCHAR_MAX，画到 top-down-view:
+				Rect bbox_dtrans_cont = boundingRect(distMapContGood[i]);
+				double ratio = 1. * UCHAR_MAX / MAX_VALID_DEPTH;
+				Rect bbox_dtrans_cont_to_tdview(
+					bbox_dtrans_cont.x, dmin * ratio,
+					bbox_dtrans_cont.width, (dmax-dmin) * ratio);
+
+				cout<<"bbox_dtrans_cont_to_tdview: "<<bbox_dtrans_cont_to_tdview<<"; "<<dmin<<", "<<dmax<<endl;
+				rectangle(tdvCont_draw_cross, bbox_dtrans_cont_to_tdview, 255, 2);
+			}//for(size_t i = 0; i < dtrans_cont_size; i++)
+
+
+			imshow("tdvCont_draw_cross", tdvCont_draw_cross);
+			if(ZCDEBUG_WRITE)
+				imwrite("tdvCont_draw_cross_"+std::to_string((long long)fid)+".jpg", tdvCont_draw_cross);
+		}
+
+		begt = clock();
+		vector<Mat> bboxMsks = zc::findHumanMasksUseBbox(dm, ZCDEBUG_LV1);
+		cout<<"bboxMsks.size: "<<bboxMsks.size()<<endl;
+		cout<<"findHumanMasksUseBbox.rate: "<<1.*(clock()-begt)/(fid+1)<<endl;
+
+		if(ZCDEBUG_LV1 && bboxMsks.size() > 0){
+			Mat bboxMsksSum = bboxMsks[0];
+			for(size_t i=1; i<bboxMsks.size(); i++)
+				bboxMsksSum += bboxMsks[i];
+			imshow("bboxMsksSum", bboxMsksSum);
+			if(ZCDEBUG_WRITE)
+				imwrite("bboxMsksSum_"+std::to_string((long long)fid)+".jpg", bboxMsksSum);
+		}
+
+#pragma endregion //测试 distMap2contours[Debug], dmat2TopDownView[Debug]
 
 		//临时去掉太深的杂乱背景，填充为最深：
 		//dm.setTo(MAX_VALID_DEPTH, dm>6000);
@@ -199,7 +328,7 @@ void main(int argc, char **argv){
 		const string sgf_configPath = "../../sgf_seed/config.txt",
 			sgf_headTemplatePath = "../../sgf_seed/headtemplate.bmp";
 		vector<Point> sgfSeeds = zc::getHeadSeeds(dm, 
-			sgf_configPath, sgf_headTemplatePath, ZCDEBUG);
+			sgf_configPath, sgf_headTemplatePath, ZCDEBUG_LV1);
 		sgfSeedSumt += (clock()-begt);
 		cout<<"sgfSeeds.size(): "<<sgfSeeds.size()<<endl;
 		
@@ -212,11 +341,11 @@ void main(int argc, char **argv){
 		if(ZCDEBUG_WRITE)
 			imwrite("1-dm_draw_"+std::to_string((long long)fid)+".jpg", dm_draw);
 
-		Mat flrApartMsk = zc::getFloorApartMask(dm, ZCDEBUG);
+		Mat flrApartMsk = zc::getFloorApartMask(dm, ZCDEBUG_LV1);
 
 		//+++++++++++++++
 		begt = clock();
-		vector<Mat> fgMsks = zc::simpleRegionGrow(dm, sgfSeeds, rgThresh, flrApartMsk, true, ZCDEBUG);
+		vector<Mat> fgMsks = zc::simpleRegionGrow(dm, sgfSeeds, rgThresh, flrApartMsk, true, ZCDEBUG_LV1);
 		rg2msksSumt += (clock()-begt);
 		int regionCnt = fgMsks.size();
 // 		Mat fgMsksSum = fgMsks[0];
@@ -224,21 +353,22 @@ void main(int argc, char **argv){
 // 			fgMsksSum += fgMsks[i];
 // 		imshow("fgMsksSum", fgMsksSum);
 
-		for(size_t i=0; i<regionCnt; i++){
-			if(ZCDEBUG)
-				imshow("fgMsks-"+std::to_string((long long)i), fgMsks[i]);
-			if(ZCDEBUG_WRITE)
-				imwrite("fgMsks-"+std::to_string((long long)i)+"_"+std::to_string((long long)fid)+".jpg", fgMsks[i]);
-		}
+// 		for(size_t i=0; i<regionCnt; i++){
+// 			if(ZCDEBUG)
+// 				imshow("fgMsks-"+std::to_string((long long)i), fgMsks[i]);
+// 			if(ZCDEBUG_WRITE)
+// 				imwrite("fgMsks-"+std::to_string((long long)i)+"_"+std::to_string((long long)fid)+".jpg", fgMsks[i]);
+// 		}
 
-		int anch = std::stoi(argv[3]);
-		Mat morphKrnl = getStructuringElement(MORPH_RECT, Size(anch*2+1, anch*2+1), Point(anch, anch) );
+// 		int anch = std::stoi(argv[3]);
+// 		Mat morphKrnl = getStructuringElement(MORPH_RECT, Size(anch*2+1, anch*2+1), Point(anch, anch) );
 
 		vector<CapgSkeleton> sklts;
 		for(size_t ir=0; ir<regionCnt; ir++){
 			Mat soloFgMsk = fgMsks[ir];
 
-			imshow("soloFgMsk-"+std::to_string((long long)ir), soloFgMsk);
+			if(ZCDEBUG_LV2)
+				imshow("soloFgMsk-"+std::to_string((long long)ir), soloFgMsk);
 
 			//open, 找最大cont, 如果是人，则predict得到sklt：
 			morphologyEx(soloFgMsk, soloFgMsk, CV_MOP_OPEN, morphKrnl);
@@ -287,7 +417,7 @@ void main(int argc, char **argv){
 				Mat soloLabelMat = bpr->predict(&depthImg, nullptr, useDense, usePre);
 				predictSumt += (clock()-begt);
 
-				if(ZCDEBUG){
+				if(ZCDEBUG_LV2){
 					Mat rgbSoloLabelMat = label_gray2rgb(soloLabelMat);
 					imshow("rgbSoloLabelMat-"+std::to_string((long long)ir), rgbSoloLabelMat);
 					if(ZCDEBUG_WRITE)
@@ -424,14 +554,14 @@ void main(int argc, char **argv){
 
 		Mat skCanvas = Mat::ones(dm.size(), CV_8UC1)*UCHAR_MAX;
 		zc::drawSkeletons(skCanvas, sklts, -1);
-		if(ZCDEBUG){
+		if(ZCDEBUG_LV1){
 			imshow("8-skCanvas", skCanvas);
 			if(ZCDEBUG_WRITE)
 				imwrite("8-skCanvas_"+std::to_string((long long)fid)+".jpg", skCanvas);
 		}
 
-		if(fid>113)
-			waitKey(0);
+// 		if(fid>113)
+// 			key = waitKey(0);
 		key = waitKey(01);
 	}//while
 
