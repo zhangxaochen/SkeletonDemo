@@ -1,5 +1,7 @@
 #ifndef __bodyPartRecognizer_h_
 #define __bodyPartRecognizer_h_
+#if CV_VERSION_MAJOR < 3
+//lincccc's code below:
 
 #include "opencv2/opencv.hpp"
 #include "depthSample.h"
@@ -370,5 +372,7 @@ private:
 	int _moduleID;
 
 };
+
+#endif // CV_VERSION_MAJOR < 3
 
 #endif

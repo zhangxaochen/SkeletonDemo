@@ -11,6 +11,8 @@ namespace zc{
 #define FEATURE_PATH "../../../plugins/orbbec_skeleton/feature"
 #endif
 
+#if CV_VERSION_MAJOR < 3
+//lincccc's code below:
 	BPRecognizer* getBprAndLoadFeature(const string &featurePath){
 		static BPRecognizer *bpr = nullptr;
 		if (nullptr == bpr){
@@ -23,6 +25,7 @@ namespace zc{
 		}
 		return bpr;
 	}
+#endif
 	//zhangxaochen: 参见 hist_analyse.m 中我的实现
 	Point simpleSeed(const Mat &dmat, int *outVeryDepth, bool debugDraw){
 		Size sz = dmat.size();
@@ -145,6 +148,11 @@ namespace zc{
 		else
 			mask = cv::abs(prevMat - curMat) > 50;
 		prevMat = curMat.clone();
+
+		//腐蚀：
+		int anch = 2;
+		Mat morphKrnl = getStructuringElement(MORPH_RECT, Size(anch*2+1, anch*2+1), Point(anch, anch) );
+		erode(mask, mask, morphKrnl);
 
 		if (debugDraw)
 			imshow("simpleMask", mask);
@@ -295,6 +303,44 @@ namespace zc{
 		return res;
 	}//simpleRegionGrow
 
+
+	//inner cpp, 暂无声明
+	//注:
+	//1. seedsMask 白色太多(>total*0.5)不要; 2. 一次增长结果candidateMsk太小(<20*30)不要
+	vector<Mat> simpleRegionGrow(Mat dmat, Mat seedsMask, int thresh, Mat mask){
+		vector<Mat> res;
+
+		Mat sdPts;
+		cv::findNonZero(seedsMask, sdPts);
+
+		size_t sdsz = sdPts.total();
+		
+		//若初始的 seedsMask 几乎全白，说明此帧坏的，舍弃：
+		if (sdsz > dmat.total()*.5)
+			return res;
+
+		for (size_t i = 0; i < sdsz; i++){
+			Point sdi = sdPts.at<Point>(i);
+
+			bool regionExists = false;
+			int regionCnt = res.size();
+			for (size_t k = 0; k < regionCnt; k++){
+				if (res[k].at<uchar>(sdi) == UCHAR_MAX){
+					regionExists = true;
+					break;
+				}
+			}
+
+			//若sdi不存在于之前任何一个mask，则新增长一个：
+			if (!regionExists){
+				Mat candidateMsk = _simpleRegionGrow(dmat, sdi, thresh, mask);
+				if (countNonZero(candidateMsk) > 20 * 30)
+					res.push_back(candidateMsk);
+			}
+		}
+		return res;
+	}//simpleRegionGrow
+
 	Mat getFloorApartMask( Mat dmat, bool debugDraw /*= false*/){
 		//分离地面滤波，做成mask：
 		int flrKrnlArr[] = {1,1,1,1,1, -1,-1,-1,-1,-1};
@@ -304,8 +350,33 @@ namespace zc{
 		Mat flrApartMat;
 		filter2D(dmat, flrApartMat, CV_32F, flrKrnl);
 		Mat flrApartMsk = abs(flrApartMat)<500;
+// 		Mat flrApartMsk2 = abs(flrApartMat)<500 | abs(flrApartMat)>1000;
 		//上半屏不管，防止手部、肩部被误删过滤：
 		flrApartMsk(Rect(0,0, dmat.cols, dmat.rows/2)).setTo(UCHAR_MAX);
+
+		//flrApartMsk 不连续（非渐变）的无效区域保留，防止手部自遮挡时被滤掉【不行，参考flrApartMsk2效果】
+		//膨胀。仅保留大块地板，去掉对手部形成的边缘
+		static int anch = 6;
+		static Mat morphKrnl = getStructuringElement(MORPH_RECT, Size(anch*2+1, anch*2+1), Point(anch, anch) );
+		//dilate(flrApartMsk, flrApartMsk, morphKrnl); //res320*240, 
+		morphologyEx(flrApartMsk, flrApartMsk, CV_MOP_CLOSE, morphKrnl); //res320*240, 
+
+		vector<vector<Point>> contours;
+		vector<Vec4i> hie;
+		Mat flrApartMskInv = (flrApartMsk==0);
+		findContours(flrApartMskInv.clone(), contours, hie, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE);
+
+		//大块地板的bbox中心点高度往下，填充零：
+// 		size_t contSz = contours.size();
+// 		Rect bbox_whole;
+// 		if(contSz){
+// 			bbox_whole = boundingRect(contours[0]);
+// 			for(size_t i = 1; i < contSz; i++){
+// 				bbox_whole |= boundingRect(contours[i]);
+// 			}
+// 			int pt_y = bbox_whole.y+bbox_whole.height/2;
+// 			flrApartMsk(Rect(0, pt_y, dmat.cols, dmat.rows - pt_y)).setTo(0);
+// 		}
 
 		if(debugDraw){
 			Rect flroi(60, 200, 10, 10);
@@ -314,16 +385,34 @@ namespace zc{
 			//floorApartMat = cv::abs(floorApartMat);
 			flrApartMat.setTo(0, abs(flrApartMat)>2000);
 			rectangle(flrApartMat, flroi, 0);
+
 			imshow("floorApartMat", flrApartMat);
 
 			Mat flrApartMat_draw;
 			normalize(flrApartMat, flrApartMat_draw, 0, UCHAR_MAX, NORM_MINMAX, CV_8UC1);
+
+			//rectangle(flrApartMat_draw, bbox_whole, 0, 3);
+			//cout<<"bbox_whole: "<<bbox_whole<<endl;
+
 			imshow("flrApartMat_draw", flrApartMat_draw);
 			imshow("flrApartMsk", flrApartMsk);
+// 			imshow("flrApartMsk2", flrApartMsk2);
 		}
 
 		return flrApartMsk;
 	}//getFloorApartMask
+
+	//与 getFloorApartMask 区别在于： 不是每次算， 只有 dmat 内容变了，才更新
+	Mat fetchFloorApartMask(Mat dmat, bool debugDraw /*= false*/){
+		Mat res;
+
+		static Mat dmatOld;// = dmat.clone();
+		if (dmatOld.empty() || countNonZero(dmatOld != dmat) > 0)
+			res = getFloorApartMask(dmat, debugDraw);
+
+		return res;
+	}//fetchFloorApartMask
+
 
 	void drawOneSkeleton(Mat &img, CapgSkeleton &sk){
 		line(img, Point(sk[0].x(), sk[0].y()), Point(sk[1].x(), sk[1].y()), Scalar(0), 2);
@@ -380,8 +469,16 @@ namespace zc{
 	}//isHumanMask
 
 
-	//1. 对 distMap 二值化得到 contours； 2. 对 contours bbox 判断，得到人体区域
-	vector<vector<Point> > distMap2contours( const Mat &dmat, bool debugDraw /*= false*/ ){
+	vector<vector<Point> > distMap2contours(const Mat &dmat, bool debugDraw /*= false*/, OutputArray _debug_mat /*= noArray()*/){
+	//vector<vector<Point> > distMap2contours( const Mat &dmat, bool debugDraw /*= false*/ ){
+
+		Mat debug_mat;
+		if(debugDraw){
+			_debug_mat.create(dmat.size(), CV_8UC1);
+			debug_mat = _debug_mat.getMat();
+			debug_mat.setTo(0);
+		}
+
 		Mat dm_draw,
 			edge_up,		//脚部与地面相连，上半身
 // 			edge_up_inv,	//黑色描边
@@ -393,24 +490,54 @@ namespace zc{
 			bwImg;			//宽黑边二值图
 		normalize(dmat, dm_draw, 0, UCHAR_MAX, NORM_MINMAX, CV_8UC1);
 
-		int th_low = 80;
+		int th_low = 40;
 		Canny(dm_draw, edge_up, th_low, th_low*2);
+		if(debugDraw){
+			imshow("distMap2contours.edge_up", edge_up);
+		}
 
 		Mat flrApartMsk = getFloorApartMask(dmat);
 		Canny(flrApartMsk, edge_ft, 64, 128);
+		if(debugDraw){
+			imshow("distMap2contours.edge_ft", edge_ft);
+		}
 
+		//edge_whole = edge_up;
 		edge_whole = edge_up + edge_ft;
 		edge_whole_inv = (edge_whole==0);
+		if(debugDraw){
+			imshow("distMap2contours.edge_whole", edge_whole);
+		}
 
 		static int anch = 4;
-		static Mat morphKrnl = getStructuringElement(MORPH_RECT, Size(anch*2+1, anch*2+1), Point(anch, anch) );
-		erode(edge_whole_inv, edge_whole_inv, morphKrnl);
+		static Mat morphKrnl = getStructuringElement(MORPH_RECT, Size(anch*2+1, anch*4+1), Point(anch, anch) );
+		erode(edge_whole_inv, edge_whole_inv, morphKrnl); //res320*240, costs 0.07ms
 		
 		bwImg = edge_whole_inv;
 
 		vector<vector<Point> > contours, cont_good;
 		vector<Vec4i> hierarchy;
-		findContours(bwImg, contours, hierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_NONE);
+		findContours(bwImg.clone(), contours, hierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_NONE);
+
+		//第一遍得到的轮廓，可能包含无效深度区域：
+		Mat roughMask = Mat::zeros(dmat.size(), CV_8UC1);
+		drawContours(roughMask, contours, -1, 255, -1);
+		
+		//第二遍求轮廓：（这里该用 roughMask & (dm_draw!=0), 但无所谓）
+		bwImg = (roughMask & dm_draw);
+		//bwImg = roughMask & (dm_draw != 0);
+		if(debugDraw){
+			imshow("distMap2contours.bwImg", bwImg);
+		}
+
+		findContours(bwImg.clone(), contours, hierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_NONE);
+
+		if(debugDraw){
+			Mat tmp_msk = Mat::zeros(dmat.size(), CV_8UC1);
+			drawContours(tmp_msk, contours, -1, 255, -1);
+			imshow("2nd.contours", tmp_msk);
+			//imwrite("edge_whole_inv.erode.bwImg_"+std::to_string((long long)frameCnt)+".jpg", edge_whole_inv);
+		}
 
 		size_t contSz = contours.size();
 		for(size_t i = 0; i < contSz; i++){
@@ -430,11 +557,29 @@ namespace zc{
 
 			//测试过滤条件： 1. bbox 长宽比; 2. bbox 高度; 
 			//3. bbox物理尺度高度; 4. bbox 下沿不能高于半屏，因为人脚部位置较低
-			if(bsz.height*1./bsz.width > 1.5 && bsz.height > 80
-				&& dep_mc * bsz.height > XTION_FOCAL_XY * 1000 && boundRect.br().y > dmat.rows / 2)
-			{
-				cont_good.push_back(contours[i]);
+			if(bsz.height*1./bsz.width > MIN_VALID_HW_RATIO && bsz.height > 80){
+				if(debugDraw){
+					cout<<"mc; dep_mc, width, height; dep_mc*w, dep_mc*h: "<<mc<<"; "
+						<<dep_mc<<", "<<bsz.width<<","<<bsz.height<<"; "
+						<<dep_mc*bsz.width<<", "<<dep_mc*bsz.height<<endl;
+					drawContours(debug_mat, contours, i, 255, -1);
+					circle(debug_mat, mc, 5, 128, 2);
+				}
+
+				//二次判定： 3. bbox物理尺度高度; 4. bbox 下沿不能高于半屏，因为人脚部位置较低
+				if(dep_mc * bsz.height > XTION_FOCAL_XY * MIN_VALID_HEIGHT_PHYSICAL_SCALE
+					&& boundRect.br().y > dmat.rows / 2)
+				{
+					cont_good.push_back(contours[i]);
+					if(debugDraw){
+						rectangle(debug_mat, boundRect, 255, 2);
+					}
+				}
+				else if(debugDraw)
+					rectangle(debug_mat, boundRect, 255);
 			}
+			else if(debugDraw) //! if(bsz.height*1./bsz.width > 1.5 && bsz.height > 80)
+				rectangle(debug_mat, boundRect, 128);
 		}
 			return cont_good;
 	}//distMap2contours
@@ -471,11 +616,11 @@ namespace zc{
 			imshow("edge_ft", edge_ft);
 		}
 
-		edge_whole = edge_up + edge_ft;
-		//edge_whole = edge_up;
+		edge_whole = edge_up;
+		//edge_whole = edge_up + edge_ft;
 		if(debugDraw){
 			imshow("edge_whole", edge_whole);
-			imwrite("edge_whole_"+std::to_string((long long)frameCnt)+".jpg", edge_whole);
+			//imwrite("edge_whole_"+std::to_string((long long)frameCnt)+".jpg", edge_whole);
 		}
 
 		edge_whole_inv = (edge_whole==0);
@@ -501,7 +646,7 @@ namespace zc{
 
 		//open
 		static int anch = 4;
-		static Mat morphKrnl = getStructuringElement(MORPH_RECT, Size(anch*2+1, anch*2+1), Point(anch, anch) );
+		static Mat morphKrnl = getStructuringElement(MORPH_RECT, Size(anch*2+1, anch*5+1), Point(anch, anch) );
 // 		morphologyEx(bwImg, bwImg, CV_MOP_OPEN, morphKrnl);
 // 		if(debugDraw){
 // 			imshow("CV_MOP_OPEN.threshold.bwImg", bwImg);
@@ -511,20 +656,28 @@ namespace zc{
 		//对 edge erode， 与distMap 二值化会有什么区别？MORPH_ELLIPSE 时几乎完全相同
 		static int erodeSumt = 0;
 		/*clock_t*/ begt = clock();
+// 		Mat tmp_edge_whole_inv = edge_whole_inv.clone();
+// 		static Mat morphKrnl2 = getStructuringElement(MORPH_RECT, Size(anch*2+1, anch*2+1), Point(anch, anch) );
+// 		erode(tmp_edge_whole_inv, tmp_edge_whole_inv, morphKrnl2);
+// 		imshow("edge_whole_inv.anch*2", tmp_edge_whole_inv);
+
 		erode(edge_whole_inv, edge_whole_inv, morphKrnl);
+		//imshow("edge_whole_inv.anch*4", edge_whole_inv);
+
+		
 		erodeSumt += (clock()-begt);
 		if(debugDraw)
 			std::cout<<"+++++++++++++++erodeSumt.rate: "<<1.*erodeSumt/(frameCnt+1)<<std::endl;
 
 		bwImg = edge_whole_inv;
 		if(debugDraw){
-			imshow("edge_whole_inv.erode.bwImg", edge_whole_inv);
-			imwrite("edge_whole_inv.erode.bwImg_"+std::to_string((long long)frameCnt)+".jpg", edge_whole_inv);
+			imshow("distMap2contoursDebug.bwImg", bwImg);
+			//imwrite("edge_whole_inv.erode.bwImg_"+std::to_string((long long)frameCnt)+".jpg", edge_whole_inv);
 		}
 
 		vector<vector<Point> > contours;
 		vector<Vec4i> hierarchy;
-		findContours(bwImg, contours, hierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_NONE);
+		findContours(bwImg.clone(), contours, hierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_NONE);
 
 		Mat cont_draw_ok = Mat::zeros(dmat.size(), CV_8UC1),
 			cont_draw_whole = cont_draw_ok.clone();
@@ -545,7 +698,7 @@ namespace zc{
 			Rect boundRect = boundingRect(contours[i]);
 			//boundRect[i] = boundingRect(contours[i]);
 			Size bsz = boundRect.size();
-			if(bsz.height*1./bsz.width > 1.5 && bsz.height > 80){
+			if(bsz.height*1./bsz.width > MIN_VALID_HW_RATIO && bsz.height > 80){
 				cout<<"mc; dep_mc, width, height; dep_mc*w, dep_mc*h: "<<mc<<"; "
 					<<dep_mc<<", "<<bsz.width<<","<<bsz.height<<"; "<<dep_mc*bsz.width<<", "<<dep_mc*bsz.height<<endl;
 
@@ -555,7 +708,7 @@ namespace zc{
 
 				if(debugDraw){
 					//测试过滤条件： 1. bbox物理尺度高度； 2. bbox 下沿不能高于半屏，因为人脚部位置较低
-					if(dep_mc * bsz.height > XTION_FOCAL_XY * 1000
+					if(dep_mc * bsz.height > XTION_FOCAL_XY * MIN_VALID_HEIGHT_PHYSICAL_SCALE
 						&& boundRect.br().y > dmat.rows / 2)
 						rectangle(cont_draw_ok, boundRect, 255, 2);
 					else
@@ -578,18 +731,28 @@ namespace zc{
 		return cont_draw_ok;
 	}//distMap2contoursDebug
 
-	//dmat 砍掉下半屏, 转为 top-down-view, 膨胀, 根据bbox判断, 提取合适的轮廓
-	//注:
-	// 1. Z轴缩放比为定值： UCHAR_MAX/MAX_VALID_DEPTH, 即 top-down-view 图高度为 256
-	// 2. debugDraw, dummy variable
-	vector<vector<Point> > dmat2TopDownView( const Mat &dmat, bool debugDraw /*= false*/ ){
+	vector<vector<Point> > dmat2TopDownView(const Mat &dmat, bool debugDraw /*= false*/, OutputArray _debug_mat /*= noArray()*/){
+	//vector<vector<Point> > dmat2TopDownView( const Mat &dmat, bool debugDraw /*= false*/ ){
 		CV_Assert(dmat.type()==CV_16UC1);
 		Mat dm_draw; //gray scale
 		dmat.convertTo(dm_draw, CV_8UC1, 1.*UCHAR_MAX/MAX_VALID_DEPTH);
-
 		//dmat 砍掉下半屏
 		dm_draw(Rect(0, dmat.rows/2, dmat.cols, dmat.rows/2)).setTo(0);
+		Mat flrApartMsk = zc::getFloorApartMask(dmat);
+		dm_draw.setTo(0, flrApartMsk==0);
+		if(debugDraw)
+			imshow("dmat2TopDownView.dm_draw", dm_draw);
+
+
 		Mat tdview = Mat::zeros(Size(dm_draw.cols, UCHAR_MAX+1), CV_16UC1);
+
+		Mat debug_mat; //用于输出观察的调试图
+		if(debugDraw){
+			_debug_mat.create(tdview.size(), CV_8UC1);
+			debug_mat = _debug_mat.getMat();
+			//debug_mat = Mat::zeros(tdview.size(), CV_8UC1);
+			debug_mat.setTo(0);
+		}
 
 		//迭代从最低行开始：(注意用 int, 不用 size_t)
 		for(int i = dm_draw.rows - 1; i >=0; i--){
@@ -603,24 +766,50 @@ namespace zc{
 		//然后转成 uchar
 		normalize(tdview, tdview, 0, UCHAR_MAX, NORM_MINMAX, CV_8UC1);
 
+		if(debugDraw){
+			imshow("tdview0", tdview);
+		}
+
+		tdview.setTo(0, tdview<128);
+
 		//膨胀
-		static int anch = 3;
-		static Mat morphKrnl = getStructuringElement(MORPH_RECT, Size(anch*2+1, anch*2+1), Point(anch, anch) );
-		morphologyEx(tdview, tdview, CV_MOP_CLOSE, morphKrnl);
+		int anch = 1;
+		Mat morphKrnl = getStructuringElement(MORPH_RECT, Size(anch*2+1, anch*2+1), Point(anch, anch) );
+		//morphologyEx(tdview, tdview, CV_MOP_CLOSE, morphKrnl);
+		erode(tdview, tdview, morphKrnl);
+		if(debugDraw)
+			imshow("tdview.erode", tdview);
+
+		anch = 1;
+		morphKrnl = getStructuringElement(MORPH_RECT, Size(anch*2+1, anch*2+1), Point(anch, anch) );
+		dilate(tdview, tdview, morphKrnl);
+
+		if(debugDraw)
+			imshow("tdview", tdview);
 
 		//top-down view 上通过 bbox 经验阈值找人：
 		vector<vector<Point> > tdvContours, tdv_cont_good;
 		vector<Vec4i> tdvHierarchy;
-		findContours(tdview, tdvContours, tdvHierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_NONE);
+		findContours(tdview.clone(), tdvContours, tdvHierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_NONE);
 		size_t tdvContSize = tdvContours.size();
 		for(size_t i = 0; i < tdvContSize; i++){
 			Rect boundRect = boundingRect(tdvContours[i]);
+
+			if(debugDraw)
+				drawContours(debug_mat, tdvContours, i, 255, -1);
+
 			//1. Z厚度判定 >3px(3*10000mm/256=117mm), <26(26*10000mm/256=1016mm)； 
 			//2. X宽度判定 (200mm~2000mm) MAX_VALID_DEPTH / UCHAR_MAX / XTION_FOCAL_XY = 1/7.68
-			if(3 <= boundRect.height && boundRect.height < 26
+			if(3 <= boundRect.height && boundRect.height < 26 * 1.5
 				&& 7.68*200 < boundRect.y * boundRect.width && boundRect.y * boundRect.width < 7.68*2000)
 			{
 				tdv_cont_good.push_back(tdvContours[i]);
+				if(debugDraw)
+					rectangle(debug_mat, boundRect, 255, 2);
+			}
+			else{
+				if(debugDraw)
+					rectangle(debug_mat, boundRect, 255);
 			}
 		}
 
@@ -665,12 +854,26 @@ namespace zc{
 		return res;
 	}//dmat2TopDownViewDebug
 
-	vector<Mat> findHumanMasksUseBbox(Mat &dmat, bool debugDraw /*= false*/){
+	vector<Mat> findHumanMasksUseBbox(Mat &dmat, bool debugDraw /*= false*/, OutputArray _debug_mat /*= noArray()*/){
+	//vector<Mat> findHumanMasksUseBbox(Mat &dmat, bool debugDraw /*= false*/){
 		vector<Mat> res;
 
-		//各自粗选得到的“好”cont：
-		vector<vector<Point>> dtrans_cont_good = zc::distMap2contours(dmat, debugDraw);
-		vector<vector<Point>> tdv_cont_good = zc::dmat2TopDownView(dmat, debugDraw);
+		//各自粗选得到的“好”cont： 
+		//因为由边缘检测得到，所以可能包含无效区域，需要再过滤一遍
+		vector<vector<Point>> dtrans_cont_good = zc::distMap2contours(dmat, false); //这里对 dtrans-cont 不画调试窗
+
+		Mat tdv_debug_draw;
+		vector<vector<Point>> tdv_cont_good = zc::dmat2TopDownView(dmat, debugDraw, tdv_debug_draw);
+
+		Mat debug_mat; //用于输出观察的调试图
+		if(debugDraw){
+			_debug_mat.create(tdv_debug_draw.size(), CV_8UC1);
+			debug_mat = _debug_mat.getMat();
+			debug_mat.setTo(0);
+
+			//tdview 实心cont， bbox， 128灰色画
+			debug_mat.setTo(128, tdv_debug_draw==255);
+		}
 		
 		size_t tdv_cont_good_size = tdv_cont_good.size();
 		vector<Rect> tdvBboxs(tdv_cont_good_size);
@@ -691,16 +894,25 @@ namespace zc{
 			double dmin, dmax;
 			minMaxLoc(dmat, &dmin, &dmax, nullptr, nullptr, cont_mask & dmat!=0);
 			
-			//补充一个判断条件: mask 深度值域不能 >1500mm
-			if(dmax-dmin > 1500)
-				continue;
-
 			//缩放比 MAX_VALID_DEPTH / UCHAR_MAX，画到 top-down-view:
 			Rect bbox_dtrans_cont = boundingRect(dtrans_cont_good[i]);
 			double ratio = 1. * UCHAR_MAX / MAX_VALID_DEPTH;
 			Rect bbox_dtrans_cont_to_tdview(
 				bbox_dtrans_cont.x, dmin * ratio,
 				bbox_dtrans_cont.width, (dmax-dmin) * ratio);
+
+			//补充一个判断条件: mask 深度值域不能 >1500mm
+			if(dmax-dmin > 1500){
+				if(debugDraw){
+					rectangle(debug_mat, bbox_dtrans_cont_to_tdview, 255, 1);
+				}
+				continue;
+			}
+
+			if(debugDraw){
+				cout<<"bbox_dtrans_cont_to_tdview: "<<bbox_dtrans_cont_to_tdview<<"; "<<dmin<<", "<<dmax<<endl;
+				rectangle(debug_mat, bbox_dtrans_cont_to_tdview, 255, 2);
+			}
 
 			bool isIntersect = false;
 			for(size_t k = 0; k < tdv_cont_good_size; k++){
@@ -733,6 +945,180 @@ namespace zc{
 		return res;
 	}//findHumanUseBbox
 
+#if CV_VERSION_MAJOR >= 3
+
+	vector<Mat> findFgMasksUseBGS(Mat &dmat, bool usePre /*= false*/, bool debugDraw /*= false*/, OutputArray _debug_mat /*= noArray()*/){
+		vector<Mat> res;
+		if (usePre){
+			static vector<Mat> prevHumMasks;
+			static vector<Point> humCenters;
+		}
+		Mat debug_mat; //用于输出观察的调试图
+		if (debugDraw){
+			_debug_mat.create(dmat.size(), CV_8UC1);
+			debug_mat = _debug_mat.getMat();
+			debug_mat.setTo(0);
+		}
+
+		Mat dm_show;
+		dmat.convertTo(dm_show, CV_8UC1, 1.*UCHAR_MAX / MAX_VALID_DEPTH);
+
+		int history = 500;
+		double varThresh = 1;
+		bool detectShadows = false;
+		static Ptr<BackgroundSubtractorMOG2> pMOG2 = 
+			//createBackgroundSubtractorMOG2();// 500, 5, false);
+			createBackgroundSubtractorMOG2(history, varThresh, detectShadows);
+
+		Mat bgImg, fgMskMOG2;
+		double learningRate = -.0281;
+		pMOG2->apply(dm_show, fgMskMOG2, learningRate);// , .83);
+		pMOG2->getBackgroundImage(bgImg);
+		if (debugDraw)
+			imshow("bgImg", bgImg);
+
+		fgMskMOG2 &= (dmat != 0);
+		if (debugDraw)
+			imshow("fgMskMOG2", fgMskMOG2);
+
+		int anch = 2;
+		Mat morphKrnl = getStructuringElement(MORPH_RECT, Size(2 * anch + 1, 2 * anch + 1), Point(anch, anch));
+		erode(fgMskMOG2, fgMskMOG2, morphKrnl);
+		
+		if (debugDraw){
+			imshow("fgMskMOG2-erode", fgMskMOG2);
+			//debug_mat = fgMskMOG2; //shallow-copy, ×
+			fgMskMOG2.copyTo(debug_mat);
+		}
+
+		Mat flrApartMsk = getFloorApartMask(dmat, debugDraw);
+		int rgThresh = 155;
+		vector<Mat> roughFgMsks = simpleRegionGrow(dmat, fgMskMOG2, rgThresh, flrApartMsk);
+
+		res = roughFgMsks;
+		return res;
+	}//findHumanMasksUseBGS
+#endif
+
+	Mat getHumansMask(vector<Mat> masks, Size sz){
+	//Mat getHumansMask( vector<Mat> masks ){
+		Mat res = Mat::zeros(sz, CV_8UC1);
+
+		//前景颜色随机：
+		//RNG rng( 0xFFFFFFFF );
+		
+		//不随机， N个人， 前六个人画出来， 后面全黑
+		const int colors[100] = {50, 100, 150, 200, 250, 250};
+
+		size_t msz = masks.size();
+		for(size_t i = 0; i < msz; i++){
+			//res += masks[i];
+			//int color = rng.uniform(128, 255);
+			int color = colors[i];
+			res.setTo(color, masks[i]);
+		}
+
+		return res;
+	}//getHumansMask
+
+	//用全局的 vector<HumanFg> 画一个彩色 mask mat:
+	Mat getHumansMask(Mat dmat, const vector<HumanFg> &humVec){
+		Mat res;
+		//8uc3, 彩色：
+		Mat dm_show;
+		dmat.convertTo(dm_show, CV_8UC3, 1.*UCHAR_MAX / MAX_VALID_DEPTH); //channel 不可变， ×
+		cvtColor(dm_show, res, CV_GRAY2BGR);
+
+		size_t humSz = humVec.size();
+		for (size_t i = 0; i < humSz; i++){
+			HumanFg hum = humVec[i];
+			Mat humMask = hum.getCurrMask();
+			Scalar c = hum.getColor();
+			res.setTo(c, humMask);
+		}
+
+		return res;
+	}//getHumansMask
+
+	vector<HumanFg> getHumanObjVec(Mat &dmat, vector<Mat> fgMasks){
+		//全局队列：
+		static vector<HumanFg> humVec;
+
+		size_t fgMskSize = fgMasks.size(),
+			humVecSize = humVec.size();
+
+		Mat dmatClone = dmat.clone();
+
+		//若尚未检测到过人，且单帧 fgMasks 有内容:
+		if (humVecSize == 0 && fgMskSize > 0){
+			cout << "+++++++++++++++humVecSize == 0" << endl;
+			for (size_t i = 0; i < fgMskSize; i++){
+				humVec.push_back({ dmatClone, fgMasks[i] });
+			}
+		}
+		//若已检测到 HumanFg, 且单帧 fgMasks 无论有无内容可更新：
+		else if (humVecSize > 0){//&& fgMskSize > 0){
+
+			vector<bool> fgMsksUsedFlagVec(fgMskSize);
+			//对队列中现有的obj更新：
+// 			for (size_t i = 0; i < humVecSize; i++){
+// 				bool isUpdated = humVec[i].updateMask(dmatClone, fgMasks, fgMsksUsedFlagVec);
+// 
+// 			}
+
+			vector<HumanFg>::iterator it = humVec.begin();
+			while (it != humVec.end()){
+				bool isUpdated = it->updateMask(dmatClone, fgMasks, fgMsksUsedFlagVec);
+				if (isUpdated)
+					it++;
+				else{
+					it = humVec.erase(it);
+					cout << "---------------humVec.erase" << endl;
+				}
+			}//while
+
+			//检查 fgMsksUsedFlagVec， 加入新人体：
+			for (size_t i = 0; i < fgMskSize; i++){
+				if (fgMsksUsedFlagVec[i]==true)
+					continue;
+
+				humVec.push_back({ dmatClone, fgMasks[i] });
+			}
+		}
+		////若已检测到过 HumanFg, 但是当前单帧 fgMasks 为空，全黑：
+		//else if (humVecSize > 0 && fgMskSize == 0){
+
+		//}
+		return humVec;
+	}//getHumanObjVec
+
+	vector<Mat> bboxFilter(Mat dmat, const vector<Mat> &origMasks){
+		vector<Mat> res;
+		size_t origMskSz = origMasks.size();
+		for (size_t i = 0; i < origMskSz; i++){
+			Mat mski = origMasks[i];
+
+			double dmin, dmax;
+			minMaxLoc(dmat, &dmin, &dmax, nullptr, nullptr, mski);
+			
+			vector<vector<Point> > contours;
+			findContours(mski.clone(), contours, RETR_EXTERNAL, CHAIN_APPROX_NONE);
+
+			CV_Assert(contours.size() > 0);
+			Rect bbox = boundingRect(contours[0]);
+
+			//类似 distMap2contours 的bbox 判定过滤：
+			//1. 不能太厚; 2. bbox高度不能太小; 3. bbox 下沿不能高于半屏，因为人脚部位置较低
+			if (dmax - dmin < 1500
+				&& bbox.height > 80
+				&& bbox.br().y > dmat.rows / 2)
+			{
+				res.push_back(mski);
+			}
+		}
+		return res;
+	}//bboxFilter
+
 	cv::Mat postRegionGrow( const Mat &flagMat, int xyThresh, int zThresh, bool debugDraw /*= false*/ )
 	{
 		static Mat prevFlagMat;
@@ -742,11 +1128,5 @@ namespace zc{
 		}
 		return flagMat;
 	}//postRegionGrow
-
-// 	cv::Mat erodeDilateN( Mat &m, int ntimes )
-// 	{
-// 		erode
-// 
-// 	}
 
 }//zc
