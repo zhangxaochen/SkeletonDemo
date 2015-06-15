@@ -14,10 +14,13 @@ namespace sgf
 	class segment
 	{
 	public:
-		segment(bool show_result1=false,bool show_distance_map1=false,bool show_edge1=false,
-			bool do_region_grow1=false,bool show_responses1=false,bool show_histogram1=false);
+// 		segment(bool show_result1=true,bool show_distance_map1=false,bool show_edge1=false,
+// 			bool do_region_grow1=false,bool show_responses1=false,bool show_histogram1=false);
+		segment(bool show_result1=false,bool show_depth_without_bg1=false,
+			bool show_topdown_view1=false,bool show_topdown_binary1=false);
 		void set_depthMap(const cv::Mat&);
-		bool set_headTemplate2D(const std::string &configPath);
+		void set_background(const cv::Mat&);
+		bool set_headTemplate2D(const std::string &headTemplatePath);
 		cv::Mat get_edgeMapWithThresh();
 		cv::Mat get_distanceMap();
 		cv::Mat get_result();
@@ -28,11 +31,12 @@ namespace sgf
 		void output(string);
 		void compute();
 		bool read_config(const std::string &configPath);
-		std::vector<cv::Point> get_seed();
 		int accurate;
 		std::string videoname;
+		std::vector<cv::Point2i> get_seed();
 	private:
 		void fill_holes();
+		void show_difference();
 		void smooth_image();
 		void compute_edge();
 		void compute_edge(double,double);
@@ -48,7 +52,11 @@ namespace sgf
 		void compute_hist();
 		bool compute_trueHead(const cv::Point2i& p);
 		void choose_and_draw_interest_region();
+		void sjbh();
 		void display();
+		void find_bg();
+		void compute_height();
+
 
 	private:
 		//一些配置信息
@@ -61,17 +69,32 @@ namespace sgf
 		double threshold_contour_ckb;
 		double threshold_headsize_min,threshold_headsize_max;
 		double a,const_depth;
+		int distance_type,mask_type;
 		/*-----*/
 
 		double max_depth,min_depth;
 
-		bool do_region_grow,show_histogram,show_distance_map,show_edge,show_responses,show_result;
+		bool do_region_grow,show_histogram,show_distance_map,
+			show_edge,show_responses,show_result,show_depth_without_bg,
+			show_topdown_view,show_topdown_binary;
 
 		std::string name;
+
+		cv::Mat background_depth;
+		cv::Mat difference_map;
+		int bg_count;
+
 		cv::Mat depth_map;
+		cv::Mat height_map;
+		cv::Mat filter_map1;
 		cv::Mat filter_map;
+		cv::Mat filter_map_binary;
 		cv::Mat histogram_image;
 		cv::Mat gray_map;
+		cv::Mat gray_clone;
+		cv::Mat depth_sjbh;
+		cv::Mat sjbh_binary;
+
 		cv::Mat head_template;
 		cv::Mat edge_map_thresh;
 		cv::Mat filter_edge;
@@ -89,7 +112,7 @@ namespace sgf
 		std::vector<cv::Mat> sub_responses;
 		std::vector<cv::Mat> sub_responses_binary;
 		std::vector<cv::Point2i> region_of_interest;
-		std::vector<cv::Point> headpoints_location;
+		std::vector<cv::Point2i> headpoints_location;
 		std::vector<double> headpoints_radius;
 		std::vector<cv::Point2i> region_of_interest_raw;
 		std::vector<cv::Vec3f> real_head;
@@ -97,29 +120,4 @@ namespace sgf
 
 		std::list<cv::Point2i> stack_list;
 	};
-}//sgf
-
-//zhangxaochen:
-namespace zc{
-	using namespace sgf;
-
-	//a utility func, loading sgf config & template instance, seeding
-	inline vector<cv::Point> getHeadSeeds(const cv::Mat &dmat, 
-		const std::string &configPath, const std::string &headTemplatePath,
-		bool debugDraw = false){
-		static segment *my_seg = nullptr;
-		if (nullptr == my_seg){
-			my_seg = new segment(debugDraw);
-			CV_Assert(my_seg->read_config(configPath) && my_seg->set_headTemplate2D(headTemplatePath));
-		}
-
-		cv::Mat tmp;
-		dmat.convertTo(tmp, CV_32FC1);
-		my_seg->set_depthMap(tmp);
-		my_seg->compute();
-
-		return my_seg->get_seed();
-	}//getHeadSeed
-
-
-}//zc
+}
