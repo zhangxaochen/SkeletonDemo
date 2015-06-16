@@ -32,7 +32,9 @@ namespace zc{
 
 	Mat simpleMask(const Mat &curMat, bool debugDraw = false);
 
-	Point simpleSeed(const Mat &dmat, int *outVeryDepth = 0, bool debugDraw = false);
+	Point seedSimple(Mat dmat, int *outVeryDepth = 0, bool debugDraw = false);
+
+	vector<vector<Point>> seedUseBbox(Mat dmat, bool debugDraw = false, OutputArray _debug_mat = noArray());
 
 	//1. 找背景大墙面；
 	//2. 若没墙，说明背景空旷，物理高度判定剔除(<2500mm)
@@ -94,7 +96,7 @@ namespace zc{
 	//用正视图、俯视图两种 bbox 求交，判定人体轮廓位置
 	//注：
 	// 1. 若 debugDraw = true, 则 _debug_mat 必须传实参
-	vector<Mat> findHumanMasksUseBbox(Mat &dmat, bool debugDraw = false, OutputArray _debug_mat = noArray());
+	vector<Mat> findFgMasksUseBbox(Mat &dmat, bool debugDraw = false, OutputArray _debug_mat = noArray());
 
 #if CV_VERSION_MAJOR >= 3
 	//用 opencv300 background-subtraction 方法提取运动物体（不必是人,e.g.:转椅）轮廓

@@ -27,7 +27,7 @@ namespace zc{
 	}
 #endif
 	//zhangxaochen: 参见 hist_analyse.m 中我的实现
-	Point simpleSeed(const Mat &dmat, int *outVeryDepth, bool debugDraw){
+	Point seedSimple(Mat dmat, int *outVeryDepth /*= 0*/, bool debugDraw /*= false*/){
 		Size sz = dmat.size();
 		int hh = sz.height,
 			ww = sz.width;
@@ -135,7 +135,7 @@ namespace zc{
 
 		*outVeryDepth = veryDepth;
 		return res;
-	}//simpleSeed
+	}//seedSimple
 
 	//1. 找背景大墙面；
 	//2. 若没墙，说明背景空旷，物理高度判定剔除(<2500mm)
@@ -149,7 +149,7 @@ namespace zc{
 			Mat heightMsk = getHeightMask(dmat, 2500);
 			maskedDmat.setTo(0, heightMsk == 0);
 
-			return findHumanMasksUseBbox(maskedDmat, debugDraw);
+			return findFgMasksUseBbox(maskedDmat, debugDraw);
 		}
 		else{ //wallDepth > 0； 有墙面
 			maskedDmat.setTo(0, dmat > wallDepth);
@@ -160,7 +160,7 @@ namespace zc{
 // 			vector<vector<Point>> tdv_cont_good = zc::dmat2TopDownView(dmat, true, tmp);
 // 
 			debugDraw = true;
-			return findHumanMasksUseBbox(maskedDmat, debugDraw, tmp);
+			return findFgMasksUseBbox(maskedDmat, debugDraw, tmp);
 		}
 	}
 
@@ -680,7 +680,7 @@ namespace zc{
 		erode(edge_whole_inv, edge_whole_inv, morphKrnl); //res320*240, costs 0.07ms
 		
 		bwImg = edge_whole_inv;
-		//去掉无效区域：
+		//去掉无效区域，不必如下两次求轮廓：
 		bwImg &= (dmat != 0);
 
 		vector<vector<Point> > contours, cont_good;
@@ -1024,9 +1024,13 @@ namespace zc{
 		return res;
 	}//dmat2TopDownViewDebug
 
-	vector<Mat> findHumanMasksUseBbox(Mat &dmat, bool debugDraw /*= false*/, OutputArray _debug_mat /*= noArray()*/){
-	//vector<Mat> findHumanMasksUseBbox(Mat &dmat, bool debugDraw /*= false*/){
-		vector<Mat> res;
+	//尝试从 findFgMasksUseBbox 剥离解耦, √
+	//用正视图、俯视图两种 bbox 求交，判定人体轮廓位置
+	//注：
+	// 1. 若 debugDraw = true, 则 _debug_mat 必须传实参
+	// 2. 返回值 vector<vector<Point>> 实际就是挑选过的 contours
+	vector<vector<Point>> seedUseBbox(Mat dmat, bool debugDraw /*= false*/, OutputArray _debug_mat /*= noArray()*/){
+		vector<vector<Point>> res;
 
 		//各自粗选得到的“好”cont： 
 		//因为由边缘检测得到，所以可能包含无效区域，需要再过滤一遍
@@ -1036,20 +1040,20 @@ namespace zc{
 		vector<vector<Point>> tdv_cont_good = zc::dmat2TopDownView(dmat, debugDraw, tdv_debug_draw);
 
 		Mat debug_mat; //用于输出观察的调试图
-		if(debugDraw){
+		if (debugDraw){
 			_debug_mat.create(tdv_debug_draw.size(), CV_8UC1);
 			debug_mat = _debug_mat.getMat();
 			debug_mat.setTo(0);
 
 			//tdview 实心cont， bbox， 128灰色画
-			debug_mat.setTo(128, tdv_debug_draw==255);
+			debug_mat.setTo(128, tdv_debug_draw == 255);
 		}
-		
+
 		size_t tdv_cont_good_size = tdv_cont_good.size();
 		vector<Rect> tdvBboxs(tdv_cont_good_size);
 
 		//得到 tdv_cont 对应 bboxs
-		for(size_t i = 0; i < tdv_cont_good_size; i++){
+		for (size_t i = 0; i < tdv_cont_good_size; i++){
 			tdvBboxs[i] = boundingRect(tdv_cont_good[i]);
 		}
 
@@ -1057,63 +1061,86 @@ namespace zc{
 
 		//对正视图每个 cont，转到俯视图， 求 bbox， 求交
 		size_t dtrans_cont_size = dtrans_cont_good.size();
-		for(size_t i = 0; i < dtrans_cont_size; i++){
+		for (size_t i = 0; i < dtrans_cont_size; i++){
 			Mat cont_mask = Mat::zeros(dmat.size(), CV_8UC1);
 			drawContours(cont_mask, dtrans_cont_good, i, 255, -1);
 			//Z轴上下界：
 			double dmin, dmax;
-			minMaxLoc(dmat, &dmin, &dmax, nullptr, nullptr, cont_mask & dmat!=0);
-			
+			minMaxLoc(dmat, &dmin, &dmax, nullptr, nullptr, cont_mask & dmat != 0);
+
 			//缩放比 MAX_VALID_DEPTH / UCHAR_MAX，画到 top-down-view:
 			Rect bbox_dtrans_cont = boundingRect(dtrans_cont_good[i]);
 			double ratio = 1. * UCHAR_MAX / MAX_VALID_DEPTH;
 			Rect bbox_dtrans_cont_to_tdview(
 				bbox_dtrans_cont.x, dmin * ratio,
-				bbox_dtrans_cont.width, (dmax-dmin) * ratio);
+				bbox_dtrans_cont.width, (dmax - dmin) * ratio);
 
 			//补充一个判断条件: mask 深度值域不能 >1500mm
-			if(dmax-dmin > 1500){
-				if(debugDraw){
+			if (dmax - dmin > 1500){
+				if (debugDraw){
 					rectangle(debug_mat, bbox_dtrans_cont_to_tdview, 255, 1);
 				}
 				continue;
 			}
 
-			if(debugDraw){
-				cout<<"bbox_dtrans_cont_to_tdview: "<<bbox_dtrans_cont_to_tdview<<"; "<<dmin<<", "<<dmax<<endl;
+			if (debugDraw){
+				cout << "bbox_dtrans_cont_to_tdview: " << bbox_dtrans_cont_to_tdview << "; " << dmin << ", " << dmax << endl;
 				rectangle(debug_mat, bbox_dtrans_cont_to_tdview, 255, 2);
 			}
 
 			bool isIntersect = false;
-			for(size_t k = 0; k < tdv_cont_good_size; k++){
+			for (size_t k = 0; k < tdv_cont_good_size; k++){
 				Rect bboxIntersect = bbox_dtrans_cont_to_tdview & tdvBboxs[k];
 				//若存在两 bbox 相交， ok！
-				if(bboxIntersect.area()!=0){
-					if(debugDraw){
-						cout<<"bboxIntersect: "<<bboxIntersect<<"; "
-						<<bbox_dtrans_cont_to_tdview<<", "<<tdvBboxs[k]<<endl
-						<<"dmin, dmax: "<<dmin<<", "<<dmax<<endl;
-						
-						cout<<"k < tdv_cont_good_size: "<<k<<", "<<tdv_cont_good_size<<endl;
+				if (bboxIntersect.area() != 0){
+					if (debugDraw){
+						cout << "bboxIntersect: " << bboxIntersect << "; "
+							<< bbox_dtrans_cont_to_tdview << ", " << tdvBboxs[k] << endl
+							<< "dmin, dmax: " << dmin << ", " << dmax << endl;
+
+						cout << "k < tdv_cont_good_size: " << k << ", " << tdv_cont_good_size << endl;
 					}
 					isIntersect = true;
 					break;
 				}
 			}
 			//若存在两 bbox 相交， ok！区域增长获取整个前景msk
-			if(isIntersect){
-				if(debugDraw)
-					cout<<"isIntersect: "<<isIntersect<<endl;
+			if (isIntersect){
+				if (debugDraw)
+					cout << "isIntersect: " << isIntersect << endl;
 
-				int rgThresh = 55;
-				Mat msk = _simpleRegionGrow(dmat, dtrans_cont_good[i], rgThresh,
-					flrApartMsk, false);
-				res.push_back(msk);
+// 				int rgThresh = 55;
+// 				Mat msk = _simpleRegionGrow(dmat, dtrans_cont_good[i], rgThresh,
+// 					flrApartMsk, false);
+// 				res.push_back(msk);
+
+				res.push_back(dtrans_cont_good[i]);
 			}
 		}//for(size_t i = 0; i < dtrans_cont_size; i++)
 
 		return res;
-	}//findHumanUseBbox
+	}//seedUseBbox
+
+	vector<Mat> findFgMasksUseBbox(Mat &dmat, bool debugDraw /*= false*/, OutputArray _debug_mat /*= noArray()*/){
+	//vector<Mat> findHumanMasksUseBbox(Mat &dmat, bool debugDraw /*= false*/){
+		
+		vector<Mat> res;
+
+		vector<vector<Point>> seedVec = seedUseBbox(dmat, debugDraw, _debug_mat);
+		size_t seedVecSize = seedVec.size();
+		
+		Mat flrApartMsk = fetchFloorApartMask(dmat, debugDraw);
+
+		for (size_t i = 0; i < seedVecSize; i++){
+			int rgThresh = 55;
+			Mat msk = _simpleRegionGrow(dmat, seedVec[i], rgThresh,
+				flrApartMsk, false);
+			res.push_back(msk);
+			//seedVec[i];
+		}
+		
+		return res;
+	}//findFgMasksUseBbox
 
 #if CV_VERSION_MAJOR >= 3
 
@@ -1167,7 +1194,7 @@ namespace zc{
 
 		res = roughFgMsks;
 		return res;
-	}//findHumanMasksUseBGS
+	}//findFgMasksUseBGS
 #endif
 
 	Mat getHumansMask(vector<Mat> masks, Size sz){
