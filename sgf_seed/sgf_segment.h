@@ -16,8 +16,9 @@ namespace sgf
 	public:
 // 		segment(bool show_result1=true,bool show_distance_map1=false,bool show_edge1=false,
 // 			bool do_region_grow1=false,bool show_responses1=false,bool show_histogram1=false);
-		segment(bool show_result1=false,bool show_depth_without_bg1=false,
-			bool show_topdown_view1=false,bool show_topdown_binary1=false);
+// 		segment(bool show_result1=false,bool show_depth_without_bg1=false,
+// 			bool show_topdown_view1=false,bool show_topdown_binary1=false);
+		segment();
 		void set_depthMap(const cv::Mat&);
 		void set_background(const cv::Mat&);
 		bool set_headTemplate2D(const std::string &headTemplatePath);
@@ -29,7 +30,7 @@ namespace sgf
 		cv::Mat get_result3();
 		void set_name(std::string);
 		void output(string);
-		void compute();
+		std::vector<cv::Point> seedSGF(cv::Mat dmat,bool showResult=false,cv::Mat& depth_without_bg=cv::Mat());
 		bool read_config(const std::string &configPath);
 		int accurate;
 		std::string videoname;
@@ -70,6 +71,7 @@ namespace sgf
 		double threshold_headsize_min,threshold_headsize_max;
 		double a,const_depth;
 		int distance_type,mask_type;
+		double height,depth_rate1,depth_rate2,bar_width;
 		/*-----*/
 
 		double max_depth,min_depth;
@@ -85,6 +87,8 @@ namespace sgf
 		int bg_count;
 
 		cv::Mat depth_map;
+		cv::Mat depth_mask;
+
 		cv::Mat height_map;
 		cv::Mat filter_map1;
 		cv::Mat filter_map;

@@ -1,0 +1,28 @@
+cmake_minimum_required(VERSION 2.8)
+set (_projname "sgf_humanDetect_test")
+project(${_projname})
+
+find_package(OpenCV REQUIRED)
+add_definitions(-DLINCCCC_DEBUG)
+
+set(${_projname}_SOURCES
+
+	./sgf_segment.cpp
+	./Holefilling.h
+	./Node.h
+	./sgf_segment.h
+	./Holefilling.cpp
+	./main.cpp
+
+)
+
+#openni 需要这个，且需要放在 target_link_libraries 之前：
+include_directories($ENV{OPEN_NI_INCLUDE})# ${OpenCV_INCLUDE_DIRS})
+link_directories($ENV{OPEN_NI_LIB})# ${OpenCV_LIB_DIR})
+
+add_executable(${_projname} ${${_projname}_SOURCES})
+set(OPENNI_LIBRARIES openNI.lib)
+target_link_libraries(${_projname} ${OpenCV_LIBS} ${OPENNI_LIBRARIES}) #opencv 居然不需要 include_directories & link_directories
+
+
+
