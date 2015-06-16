@@ -34,6 +34,12 @@ namespace zc{
 
 	Point simpleSeed(const Mat &dmat, int *outVeryDepth = 0, bool debugDraw = false);
 
+	//1. 找背景大墙面；
+	//2. 若没墙，说明背景空旷，物理高度判定剔除(<2500mm)
+	//3. 剩余最高点做种子点
+	vector<Mat> findFgMasksUseWallAndHeight(Mat dmat, bool debugDraw = false);
+
+
 	//Mat simpleRegionGrow(const Mat &dmat, Point seed, int thresh, bool debugDraw = false);
 	Mat _simpleRegionGrow(const Mat &dmat, Point seed, int thresh, const Rect roi, bool debugDraw = false);
 	Mat _simpleRegionGrow(const Mat &dmat, vector<Point> seeds, int thresh, const Rect roi, bool debugDraw = false);
@@ -42,8 +48,23 @@ namespace zc{
 	Mat _simpleRegionGrow(const Mat &dmat, vector<Point> seeds, int thresh, const Mat &mask, bool debugDraw = false);
 	vector<Mat> simpleRegionGrow(const Mat &dmat, vector<Point> seeds, int thresh, const Mat &mask, bool getMultiMasks = false, bool debugDraw = false);
 
+
+	//三个默认参数(flrKrnl, mskThresh, morphRadius) 版 
 	Mat getFloorApartMask(Mat dmat, bool debugDraw = false);
+	//返回：用于去除地板的mask
+	Mat getFloorApartMask(Mat dmat, Mat flrKrnl, int mskThresh, int morphRadius, bool debugDraw = false);
+
 	Mat fetchFloorApartMask(Mat dmat, bool debugDraw = false);
+
+	Mat calcHeightMap(Mat dmat, bool debugDraw = false);
+	Mat fetchHeightMap(Mat dmat, bool debugDraw = false);
+
+	Mat getHeightMask(Mat dmat, int limitMs = 2500);
+
+	//直方图方式寻找大墙面深度值（大峰值）
+	//适用于正对墙面的用例
+	//RETURN: -1 表示没找到足够大的墙面；正值为墙面深度值
+	int getWallDepth(Mat &dmat);
 
 	void drawOneSkeleton(Mat &img, CapgSkeleton &sk);
 	void drawSkeletons(Mat &img, const vector<CapgSkeleton> &sklts, int skltIdx);
@@ -223,7 +244,10 @@ namespace zc{
 			vector<vector<Point> > contours;
 			findContours(_currMask.clone(), contours, RETR_EXTERNAL, CHAIN_APPROX_NONE);
 
-			CV_Assert(contours.size() > 0);
+			//CV_Assert(contours.size() > 0); //有些时候就是找不到，【未解决，fake】
+			//fake:
+			contours.push_back(vector<Point>());
+
 			Rect bbox = boundingRect(contours[0]);
 			//2. bbox高度不能太小; 3. bbox 下沿不能高于半屏，因为人脚部位置较低
 			if (bbox.height < 80
@@ -294,7 +318,10 @@ namespace zc{
 			//有且仅有一个连通前景：
 			//CV_Assert(contours.size() == 1);
 
-			return getContMassCenter(contours[0]);
+			if (contours.size() > 0)
+				return getContMassCenter(contours[0]);
+			else
+				return Point(-1, -1);
 		}//getContMassCenter
 
 	};//class HumanFg
@@ -302,8 +329,9 @@ namespace zc{
 	//vector<Mat> bboxFilter(const vector<Mat> &origMasks);
 	vector<Mat> bboxFilter(Mat dmat, const vector<Mat> &origMasks);
 
-
-
+	//radius: kernel size is (2*radius+1)^2
+	//shape: default MORPH_RECT
+	Mat getMorphKrnl(int radius = 1, int shape = MORPH_RECT);//getMorphKrnl
 
 	//region-grow 后处理： 
 	// 1. 找不到种子点，进而增长失败的情况； 

@@ -137,6 +137,33 @@ namespace zc{
 		return res;
 	}//simpleSeed
 
+	//1. 找背景大墙面；
+	//2. 若没墙，说明背景空旷，物理高度判定剔除(<2500mm)
+	//3. 剩余最高点做种子点
+	vector<Mat> findFgMasksUseWallAndHeight(Mat dmat, bool debugDraw /*= false*/){
+		//vector<Mat> res;
+
+		Mat maskedDmat = dmat.clone();
+		int wallDepth = zc::getWallDepth(dmat);
+		if (wallDepth < 0){//无大墙面， 背景较空旷， 用物理高度判定剔除(<2500mm)
+			Mat heightMsk = getHeightMask(dmat, 2500);
+			maskedDmat.setTo(0, heightMsk == 0);
+
+			return findHumanMasksUseBbox(maskedDmat, debugDraw);
+		}
+		else{ //wallDepth > 0； 有墙面
+			maskedDmat.setTo(0, dmat > wallDepth);
+
+			Mat tmp;
+// 			vector<vector<Point>> dtrans_cont_good = zc::distMap2contours(dmat, true, tmp);
+// 
+// 			vector<vector<Point>> tdv_cont_good = zc::dmat2TopDownView(dmat, true, tmp);
+// 
+			debugDraw = true;
+			return findHumanMasksUseBbox(maskedDmat, debugDraw, tmp);
+		}
+	}
+
 	Mat simpleMask(const Mat &curMat, bool debugDraw){
 		static bool isFirst = true;
 		static Mat prevMat;
@@ -341,32 +368,74 @@ namespace zc{
 		return res;
 	}//simpleRegionGrow
 
-	Mat getFloorApartMask( Mat dmat, bool debugDraw /*= false*/){
+	cv::Mat getFloorApartMask(Mat dmat, bool debugDraw /*= false*/){
+		int flrKrnlArr[] = { 1, 1, 1, -1, -1, -1 };
+		Mat flrKrnl((sizeof flrKrnlArr) / (sizeof flrKrnlArr[0]), 1, CV_32S, flrKrnlArr);
+
+		int mskThresh = 100;
+		int morphRadius = 3;
+		return getFloorApartMask(dmat, flrKrnl, mskThresh, morphRadius, debugDraw);
+	}//getFloorApartMask
+
+	Mat getFloorApartMask(Mat dmat, Mat flrKrnl, int mskThresh, int morphRadius, bool debugDraw /*= false*/){
+	//Mat getFloorApartMask( Mat dmat, bool debugDraw /*= false*/){
 		//分离地面滤波，做成mask：
-		int flrKrnlArr[] = {1,1,1,1,1, -1,-1,-1,-1,-1};
-		Mat flrKrnl((sizeof flrKrnlArr)/(sizeof flrKrnlArr[0]), 1, CV_32S, flrKrnlArr);
+		//int flrKrnlArr[] = { 1, 1, 1, 1, 1, -1, -1, -1, -1, -1 };
+		//int flrKrnlArr[] = { 1, 1, 1, -1, -1, -1 };
+		//Mat flrKrnl((sizeof flrKrnlArr)/(sizeof flrKrnlArr[0]), 1, CV_32S, flrKrnlArr);
+
 		//cv::flip(flrKrnl, flrKrnl, 0);
 
-		Mat flrApartMat;
+		Mat flrApartMatOrig, flrApartMat;
+		Mat tmp;
+
 		filter2D(dmat, flrApartMat, CV_32F, flrKrnl);
-		Mat flrApartMsk = abs(flrApartMat)<500;
+		
+		Mat flrApartMsk = abs(flrApartMat)<mskThresh;
 // 		Mat flrApartMsk2 = abs(flrApartMat)<500 | abs(flrApartMat)>1000;
 		//上半屏不管，防止手部、肩部被误删过滤：
-		flrApartMsk(Rect(0,0, dmat.cols, dmat.rows/2)).setTo(UCHAR_MAX);
+		Rect upHalfWin(0, 0, dmat.cols, dmat.rows / 2);
+		flrApartMsk(upHalfWin).setTo(UCHAR_MAX);
 
 		//flrApartMsk 不连续（非渐变）的无效区域保留，防止手部自遮挡时被滤掉【不行，参考flrApartMsk2效果】
-		//膨胀。仅保留大块地板，去掉对手部形成的边缘
-		static int anch = 6;
-		static Mat morphKrnl = getStructuringElement(MORPH_RECT, Size(anch*2+1, anch*2+1), Point(anch, anch) );
-		//dilate(flrApartMsk, flrApartMsk, morphKrnl); //res320*240, 
-		morphologyEx(flrApartMsk, flrApartMsk, CV_MOP_CLOSE, morphKrnl); //res320*240, 
 
-		vector<vector<Point>> contours;
-		vector<Vec4i> hie;
-		Mat flrApartMskInv = (flrApartMsk==0);
-		findContours(flrApartMskInv.clone(), contours, hie, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE);
+		Mat morphKrnl = getMorphKrnl(morphRadius);
+		//膨胀：仅保留大块地板，去掉对手部形成的边缘；腐蚀：希望脚部周围闭合。
+		//效果差，腐蚀过大导致脚部难看
+// 		dilate(flrApartMsk, flrApartMsk, morphKrnl); //res320*240, 
+// 		morphKrnl = getMorphKrnl(12);
+// 		erode(flrApartMsk, flrApartMsk, morphKrnl); //res320*240, 
 
-		//大块地板的bbox中心点高度往下，填充零：
+		//底部 open操作， 非close，针对人走近时脚部与屏幕边缘连成一片
+		Mat flrApartMsk_feet;
+		morphologyEx(flrApartMsk, flrApartMsk_feet, MORPH_OPEN, morphKrnl);
+		Rect up3of4Win(0, 0, dmat.cols, dmat.rows * 3 / 4);
+		flrApartMsk_feet(up3of4Win).setTo(UCHAR_MAX);
+
+		//close，膨胀-腐蚀等量：
+		morphologyEx(flrApartMsk, tmp, MORPH_CLOSE, morphKrnl); //res320*240, 
+		flrApartMsk = tmp;
+
+		//白色求交，黑色求和：
+		tmp = flrApartMsk & flrApartMsk_feet;
+		if (debugDraw)
+			imshow("tmp", tmp);
+		flrApartMsk = tmp;
+
+// 		//图像底部边缘腐蚀，使全黑：
+// 		int krnlHt = 30;
+// 		Mat morphKrnl2 = getStructuringElement(MORPH_CROSS, Size(1, krnlHt));
+// 
+// 		erode(flrApartMsk, tmp, morphKrnl2, Point(0, krnlHt - 1));
+// 		//flrApartMsk = tmp;
+// 		imshow("tmp", tmp);
+
+// 		//大块地板的bbox中心点高度往下，填充零：
+// 		vector<vector<Point>> contours;
+// 		vector<Vec4i> hie;
+// 		Mat flrApartMskInv = (flrApartMsk==0);
+// 		findContours(flrApartMskInv.clone(), contours, hie, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE);
+// 
 // 		size_t contSz = contours.size();
 // 		Rect bbox_whole;
 // 		if(contSz){
@@ -412,6 +481,103 @@ namespace zc{
 
 		return res;
 	}//fetchFloorApartMask
+
+	//计算物理尺度高度Mat：
+	cv::Mat calcHeightMap(Mat dmat, bool debugDraw /*= false*/)
+	{
+		Mat res = dmat.clone(); //保持 cv16uc1 应该没错；
+
+		int hh = res.rows;
+		CV_Assert(hh > 0);
+		for (int i = 0; i < hh; i++){
+			//const uchar *row = res.ptr<uchar>(i);
+			Mat row = res.row(i);
+			row = row * (hh - i) / XTION_FOCAL_XY;
+		}
+
+		return res;
+	}//calcHeightMap
+
+	//与 calcHeightMap 区别在于： 不是每次算， 只有 dmat 内容变了，才更新
+	cv::Mat fetchHeightMap(Mat dmat, bool debugDraw /*= false*/)
+	{
+		Mat res;
+
+		static Mat dmatOld;
+		if (dmatOld.empty() || countNonZero(dmatOld != dmat) > 0)
+			res = calcHeightMap(dmat, debugDraw);
+
+		return res;
+	}//fetchHeightMap
+
+	//截取物理尺度高度<limitMs(毫米)像素点做mask
+	Mat getHeightMask(Mat dmat, int limitMs /*= 2500*/){
+		Mat htMap = zc::fetchHeightMap(dmat);
+		//imshow("htMap", htMap);
+
+		//Mat htMap_show;
+		//htMap.convertTo(htMap_show, CV_8UC1, 1.*UCHAR_MAX / 6e3);//×
+		//imshow("htMap_show", htMap_show);
+
+		Mat fgHeightMap = htMap < limitMs & dmat != 0;
+		//imshow("fgHeightMap", fgHeightMap);
+
+		return fgHeightMap;
+	}//getHeightMask
+
+	int getWallDepth(Mat &dmat){
+		double dmin, dmax;
+		cv::minMaxLoc(dmat, &dmin, &dmax);
+		int histSize = dmax - dmin;
+		float range[] = { dmin, dmax };
+		const float *histRange = { range };
+		//const float *histRange2 = range ; //√
+
+		Mat histo;
+		calcHist(&dmat, 1, 0, Mat(), histo, 1, &histSize, &histRange);
+		// 
+		// 			Mat histo2;
+		// 			calcHist(&dmat, 1, 0, Mat(), histo2, 1, &histSize, &histRange, true, true); //accumulate=true 没用
+
+		//深度滑窗长度50cm：
+		int winLen = 500;
+		//winLen窗口长度内bar累加高度：
+		float maxBarSum = 0;
+		int maxIdx = 0;
+		//i=1 开始：
+		for (int i = 1; i < histSize - winLen; i++){
+
+			float barSumCnt = 0;
+			for (int k = i; k < i + winLen; k++){
+				float barCnt = histo.at<float>(k);
+				barSumCnt += barCnt;
+			}
+			if (maxBarSum < barSumCnt){
+				maxIdx = i;
+				maxBarSum = barSumCnt;
+			}
+		}
+
+		cout << "maxBarSum: " << maxBarSum << endl;
+		if (maxBarSum < dmat.total() * 0.3)
+			//---------------返回 -1 表示没找到足够大的墙面：
+			return -1;
+
+		//小范围[maxIdx, maxIdx+maxBarSum) 找峰值
+		float maxBarSum_2 = 0;
+		int maxIdx_2 = 0;
+
+		for (int i = maxIdx; i < maxIdx + winLen; i++){
+			float barCnt = histo.at<float>(i);
+			if (maxBarSum_2 < barCnt){
+				maxIdx_2 = i;
+				maxBarSum_2 = barCnt;
+			}
+		}
+		//往前20cm：
+		int wallDepth = maxIdx_2 - 200;
+		return wallDepth;
+	}//getWallDepth
 
 
 	void drawOneSkeleton(Mat &img, CapgSkeleton &sk){
@@ -514,30 +680,32 @@ namespace zc{
 		erode(edge_whole_inv, edge_whole_inv, morphKrnl); //res320*240, costs 0.07ms
 		
 		bwImg = edge_whole_inv;
+		//去掉无效区域：
+		bwImg &= (dmat != 0);
 
 		vector<vector<Point> > contours, cont_good;
 		vector<Vec4i> hierarchy;
 		findContours(bwImg.clone(), contours, hierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_NONE);
 
-		//第一遍得到的轮廓，可能包含无效深度区域：
-		Mat roughMask = Mat::zeros(dmat.size(), CV_8UC1);
-		drawContours(roughMask, contours, -1, 255, -1);
-		
-		//第二遍求轮廓：（这里该用 roughMask & (dm_draw!=0), 但无所谓）
-		bwImg = (roughMask & dm_draw);
-		//bwImg = roughMask & (dm_draw != 0);
+// 		//第一遍得到的轮廓，可能包含无效深度区域：
+// 		Mat roughMask = Mat::zeros(dmat.size(), CV_8UC1);
+// 		drawContours(roughMask, contours, -1, 255, -1);
+// 		
+// 		//第二遍求轮廓：（这里该用 roughMask & (dm_draw!=0), 但无所谓）
+// 		bwImg = (roughMask & dm_draw);
+// 		//bwImg = roughMask & (dm_draw != 0);
 		if(debugDraw){
 			imshow("distMap2contours.bwImg", bwImg);
 		}
-
-		findContours(bwImg.clone(), contours, hierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_NONE);
-
-		if(debugDraw){
-			Mat tmp_msk = Mat::zeros(dmat.size(), CV_8UC1);
-			drawContours(tmp_msk, contours, -1, 255, -1);
-			imshow("2nd.contours", tmp_msk);
-			//imwrite("edge_whole_inv.erode.bwImg_"+std::to_string((long long)frameCnt)+".jpg", edge_whole_inv);
-		}
+// 
+// 		findContours(bwImg.clone(), contours, hierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_NONE);
+// 
+// 		if(debugDraw){
+// 			Mat tmp_msk = Mat::zeros(dmat.size(), CV_8UC1);
+// 			drawContours(tmp_msk, contours, -1, 255, -1);
+// 			imshow("2nd.contours", tmp_msk);
+// 			//imwrite("edge_whole_inv.erode.bwImg_"+std::to_string((long long)frameCnt)+".jpg", edge_whole_inv);
+// 		}
 
 		size_t contSz = contours.size();
 		for(size_t i = 0; i < contSz; i++){
@@ -764,7 +932,9 @@ namespace zc{
 			}
 		}
 		//然后转成 uchar
-		normalize(tdview, tdview, 0, UCHAR_MAX, NORM_MINMAX, CV_8UC1);
+		Mat tmp;
+		normalize(tdview, tmp, 0, UCHAR_MAX, NORM_MINMAX, CV_8UC1);
+		tdview = tmp;
 
 		if(debugDraw){
 			imshow("tdview0", tdview);
@@ -930,7 +1100,7 @@ namespace zc{
 					break;
 				}
 			}
-			//若存在两 bbox 相交， ok！
+			//若存在两 bbox 相交， ok！区域增长获取整个前景msk
 			if(isIntersect){
 				if(debugDraw)
 					cout<<"isIntersect: "<<isIntersect<<endl;
@@ -971,7 +1141,7 @@ namespace zc{
 			createBackgroundSubtractorMOG2(history, varThresh, detectShadows);
 
 		Mat bgImg, fgMskMOG2;
-		double learningRate = -.0281;
+		double learningRate = .1281;
 		pMOG2->apply(dm_show, fgMskMOG2, learningRate);// , .83);
 		pMOG2->getBackgroundImage(bgImg);
 		if (debugDraw)
@@ -992,7 +1162,7 @@ namespace zc{
 		}
 
 		Mat flrApartMsk = getFloorApartMask(dmat, debugDraw);
-		int rgThresh = 155;
+		int rgThresh = 55;
 		vector<Mat> roughFgMsks = simpleRegionGrow(dmat, fgMskMOG2, rgThresh, flrApartMsk);
 
 		res = roughFgMsks;
@@ -1109,15 +1279,33 @@ namespace zc{
 
 			//类似 distMap2contours 的bbox 判定过滤：
 			//1. 不能太厚; 2. bbox高度不能太小; 3. bbox 下沿不能高于半屏，因为人脚部位置较低
-			if (dmax - dmin < 1500
-				&& bbox.height > 80
-				&& bbox.br().y > dmat.rows / 2)
+			bool notTooThick = dmax - dmin < 1500,
+				pxHeightEnough = bbox.height >80,
+				feetLowEnough = bbox.br().y > dmat.rows / 2;
+
+			cout << "notTooThick, pxHeightEnough, feetLowEnough: "
+				<< notTooThick << ", "
+				<< pxHeightEnough << ", "
+				<< feetLowEnough << endl;
+				
+
+			if (notTooThick && pxHeightEnough&& feetLowEnough)
 			{
 				res.push_back(mski);
 			}
 		}
 		return res;
 	}//bboxFilter
+
+	cv::Mat getMorphKrnl(int radius /*= 1*/, int shape /*= MORPH_RECT*/)
+	{
+		return getStructuringElement(shape, Size(2 * radius + 1, 2 * radius + 1), Point(radius, radius));
+	}
+
+
+
+
+
 
 	cv::Mat postRegionGrow( const Mat &flagMat, int xyThresh, int zThresh, bool debugDraw /*= false*/ )
 	{
@@ -1128,5 +1316,7 @@ namespace zc{
 		}
 		return flagMat;
 	}//postRegionGrow
+
+
 
 }//zc
