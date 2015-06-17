@@ -140,7 +140,7 @@ namespace zc{
 	//1. 找背景大墙面；
 	//2. 若没墙，说明背景空旷，物理高度判定剔除(<2500mm)
 	//3. 剩余最高点做种子点
-	vector<Mat> findFgMasksUseWallAndHeight(Mat dmat, bool debugDraw /*= false*/){
+	vector<Mat> findFgMasksUseWallAndHeight(Mat dmat, bool usePre /*= false*/, bool debugDraw /*= false*/){
 		//vector<Mat> res;
 
 		Mat maskedDmat = dmat.clone();
@@ -149,7 +149,7 @@ namespace zc{
 			Mat heightMsk = getHeightMask(dmat, 2500);
 			maskedDmat.setTo(0, heightMsk == 0);
 
-			return findFgMasksUseBbox(maskedDmat, debugDraw);
+			return findFgMasksUseBbox(maskedDmat, false, debugDraw);
 		}
 		else{ //wallDepth > 0； 有墙面
 			maskedDmat.setTo(0, dmat > wallDepth);
@@ -160,7 +160,8 @@ namespace zc{
 // 			vector<vector<Point>> tdv_cont_good = zc::dmat2TopDownView(dmat, true, tmp);
 // 
 			debugDraw = true;
-			return findFgMasksUseBbox(maskedDmat, debugDraw, tmp);
+			//bool usePre = true;
+			return findFgMasksUseBbox(maskedDmat, usePre, debugDraw, tmp);
 		}
 	}
 
@@ -302,18 +303,28 @@ namespace zc{
 		}
 
 		return flagMat;
-	}//simpleRegionGrow
+	}//_simpleRegionGrow
 
-	vector<Mat> simpleRegionGrow(const Mat &dmat, vector<Point> seeds, int thresh, const Mat &mask, bool getMultiMasks /*= false*/, bool debugDraw /*= false*/){
+
+	cv::Mat _simpleRegionGrow(const Mat &dmat, Mat seedsMask, int thresh, const Mat &mask, bool debugDraw /*= false*/)
+	{
+		//Mat sdPtsMat;
+		vector<Point> sdPtsMat;
+		findNonZero(seedsMask == UCHAR_MAX, sdPtsMat);
+
+		return _simpleRegionGrow(dmat, seedsMask, thresh, mask, debugDraw);
+	}
+
+	vector<Mat> simpleRegionGrow(const Mat &dmat, vector<Point> seedsVec, int thresh, const Mat &mask, bool getMultiMasks /*= false*/, bool debugDraw /*= false*/){
 		vector<Mat> res;
 		if(!getMultiMasks){
-			Mat msk = _simpleRegionGrow(dmat, seeds, thresh, mask, debugDraw);
+			Mat msk = _simpleRegionGrow(dmat, seedsVec, thresh, mask, debugDraw);
 			res.push_back(msk);
 		}
 		else{//getMultiMasks
-			size_t sdsz = seeds.size();
+			size_t sdsz = seedsVec.size();
 			for(size_t i = 0; i < sdsz; i++){
-				Point sdi = seeds[i];
+				Point sdi = seedsVec[i];
 
 				bool regionExists = false;
 				int regionCnt = res.size();
@@ -330,43 +341,93 @@ namespace zc{
 		return res;
 	}//simpleRegionGrow
 
+	vector<Mat> simpleRegionGrow(const Mat &dmat, Mat seedsMask, int thresh, const Mat &mask, bool getMultiMasks /*= false*/, bool debugDraw /*= false*/){
+		vector<Point> sdsVec;
+		findNonZero(seedsMask == UCHAR_MAX, sdsVec);
+
+		return simpleRegionGrow(dmat, sdsVec, thresh, mask, getMultiMasks, debugDraw);
+	}//simpleRegionGrow
+
+
+	vector<Mat> simpleRegionGrow(const Mat &dmat, vector<vector<Point>> seedsVecOfVec, int thresh, const Mat &mask, bool debugDraw /*= false*/){
+		vector<Mat> res;
+
+		size_t sz = seedsVecOfVec.size();
+		for (size_t i = 0; i < sz; i++){
+			res.push_back(_simpleRegionGrow(dmat, seedsVecOfVec[i], thresh, mask, debugDraw));
+		}
+
+		return res;
+	}//simpleRegionGrow
+
+	vector<Mat> simpleRegionGrow(const Mat &dmat, vector<Mat> sdMats, int thresh, const Mat &mask, bool debugDraw /*= false*/){
+		vector<Mat> res;
+
+		size_t sz = sdMats.size();
+		for (size_t i = 0; i < sz; i++){
+			res.push_back(_simpleRegionGrow(dmat, sdMats[i], thresh, mask, debugDraw));
+		}
+
+		return res;
+	}//simpleRegionGrow
+
+
+	cv::Mat pts2maskMat(const vector<Point> pts, Size matSz){
+		Mat res = Mat::zeros(matSz, CV_8UC1);
+
+		size_t ptsVecSz = pts.size();
+		for (size_t i = 0; i < ptsVecSz; i++){
+			res.at<uchar>(pts[i]) = UCHAR_MAX;
+		}
+
+		return res;
+	}//pts2maskMat
+
+
+	vector<Point> maskMat2pts(Mat maskMat){
+		vector<Point> res;
+		findNonZero(maskMat == UCHAR_MAX, res);
+		return res;
+	}//maskMat2pts
 
 	//inner cpp, 暂无声明
 	//注:
-	//1. seedsMask 白色太多(>total*0.5)不要; 2. 一次增长结果candidateMsk太小(<20*30)不要
-	vector<Mat> simpleRegionGrow(Mat dmat, Mat seedsMask, int thresh, Mat mask){
-		vector<Mat> res;
-
-		Mat sdPts;
-		cv::findNonZero(seedsMask, sdPts);
-
-		size_t sdsz = sdPts.total();
-		
-		//若初始的 seedsMask 几乎全白，说明此帧坏的，舍弃：
-		if (sdsz > dmat.total()*.5)
-			return res;
-
-		for (size_t i = 0; i < sdsz; i++){
-			Point sdi = sdPts.at<Point>(i);
-
-			bool regionExists = false;
-			int regionCnt = res.size();
-			for (size_t k = 0; k < regionCnt; k++){
-				if (res[k].at<uchar>(sdi) == UCHAR_MAX){
-					regionExists = true;
-					break;
-				}
-			}
-
-			//若sdi不存在于之前任何一个mask，则新增长一个：
-			if (!regionExists){
-				Mat candidateMsk = _simpleRegionGrow(dmat, sdi, thresh, mask);
-				if (countNonZero(candidateMsk) > 20 * 30)
-					res.push_back(candidateMsk);
-			}
-		}
-		return res;
-	}//simpleRegionGrow
+	//1. 参数： seedsMask 白色太多(>total*0.5)不要; 
+	//2. 返回值： 一次增长结果candidateMsk太小(<20*30)不要
+	//---------------@deprecated, 错误思路，不该有特定经验性限制！
+// 	vector<Mat> simpleRegionGrow(Mat dmat, Mat seedsMask, int thresh, Mat mask){
+// 		vector<Mat> res;
+// 
+// 		Mat sdPts;
+// 		cv::findNonZero(seedsMask, sdPts);
+// 
+// 		size_t sdsz = sdPts.total();
+// 		
+// 		//若初始的 seedsMask 几乎全白，说明此帧坏的，舍弃：
+// // 		if (sdsz > dmat.total()*.5)
+// // 			return res;
+// 
+// 		for (size_t i = 0; i < sdsz; i++){
+// 			Point sdi = sdPts.at<Point>(i);
+// 
+// 			bool regionExists = false;
+// 			int regionCnt = res.size();
+// 			for (size_t k = 0; k < regionCnt; k++){
+// 				if (res[k].at<uchar>(sdi) == UCHAR_MAX){
+// 					regionExists = true;
+// 					break;
+// 				}
+// 			}
+// 
+// 			//若sdi不存在于之前任何一个mask，则新增长一个：
+// 			if (!regionExists){
+// 				Mat candidateMsk = _simpleRegionGrow(dmat, sdi, thresh, mask);
+// // 				if (countNonZero(candidateMsk) > 20 * 30)
+// 					res.push_back(candidateMsk);
+// 			}
+// 		}
+// 		return res;
+// 	}//simpleRegionGrow
 
 	cv::Mat getFloorApartMask(Mat dmat, bool debugDraw /*= false*/){
 		int flrKrnlArr[] = { 1, 1, 1, -1, -1, -1 };
@@ -1024,11 +1085,6 @@ namespace zc{
 		return res;
 	}//dmat2TopDownViewDebug
 
-	//尝试从 findFgMasksUseBbox 剥离解耦, √
-	//用正视图、俯视图两种 bbox 求交，判定人体轮廓位置
-	//注：
-	// 1. 若 debugDraw = true, 则 _debug_mat 必须传实参
-	// 2. 返回值 vector<vector<Point>> 实际就是挑选过的 contours
 	vector<vector<Point>> seedUseBbox(Mat dmat, bool debugDraw /*= false*/, OutputArray _debug_mat /*= noArray()*/){
 		vector<vector<Point>> res;
 
@@ -1121,28 +1177,126 @@ namespace zc{
 		return res;
 	}//seedUseBbox
 
-	vector<Mat> findFgMasksUseBbox(Mat &dmat, bool debugDraw /*= false*/, OutputArray _debug_mat /*= noArray()*/){
+	vector<Mat> findFgMasksUseBbox(Mat &dmat, bool usePre /*= false*/, bool debugDraw /*= false*/, OutputArray _debug_mat /*= noArray()*/){
 	//vector<Mat> findHumanMasksUseBbox(Mat &dmat, bool debugDraw /*= false*/){
 		
-		vector<Mat> res;
+		vector<Mat> resVec;
 
 		vector<vector<Point>> seedVec = seedUseBbox(dmat, debugDraw, _debug_mat);
 		size_t seedVecSize = seedVec.size();
 		
 		Mat flrApartMsk = fetchFloorApartMask(dmat, debugDraw);
 
+		int rgThresh = 55;
 		for (size_t i = 0; i < seedVecSize; i++){
-			int rgThresh = 55;
 			Mat msk = _simpleRegionGrow(dmat, seedVec[i], rgThresh,
 				flrApartMsk, false);
-			res.push_back(msk);
+			resVec.push_back(msk);
 			//seedVec[i];
 		}
 		
-		return res;
+		//若启用时序信息【不动候选点】，后处理，用于补完此帧遗漏的前景：
+		static vector<Mat> prevMaskVec; //缓存上一帧抠像结果
+		if (usePre && prevMaskVec.size() == 0){
+
+			int noMoveThresh = 55;
+// 			size_t prevVecSize = prevMaskVec.size();
+// 			for (size_t i = 0; i < prevVecSize; i++){
+// 				seedNoMove(dmat, prevMaskVec[i], noMoveThresh);
+// 			}
+			vector<Mat> sdsUsePre = seedNoMove(dmat, prevMaskVec, noMoveThresh);
+// 			size_t sdsUsePreSz = sdsUsePre.size();
+// 			for (size_t i = 0; i < sdsUsePreSz; i++){
+// 				sdsUsePre[i]
+// 			}
+
+			int rgThresh = 55;
+			//用不动点增长出的 mask-vec
+			vector<Mat> noMoveFgMskVec = simpleRegionGrow(dmat, sdsUsePre, rgThresh, flrApartMsk, debugDraw);
+
+			prevMaskVec = resVec;
+
+			//fgMskVec 与 res 叠加，求“或”
+			vector<Mat> newResVec = resVec;
+
+			//内外循环顺序与 newResVec 是谁(resVec or noMoveFgMskVec)有关
+			size_t noMoveFgMskVecSize = noMoveFgMskVec.size();
+			for (size_t i = 0; i < noMoveFgMskVecSize; i++){
+				Mat noMoveMsk_i = noMoveFgMskVec[i];
+
+				bool foundIntersect = false;
+
+				size_t origResSz = resVec.size();
+				for (size_t k = 0; k < origResSz; k++){
+					Mat resMsk_k = resVec[k];
+					//【暂定】只要相交，算作同一个mask
+					if (countNonZero(noMoveMsk_i & resMsk_k) != 0){
+						foundIntersect = true;
+						newResVec[k] = (noMoveMsk_i | resMsk_k); //原本 newResVec[k] == resMsk_k
+
+						//break; //求或，不要跳出
+					}
+				}
+
+				if (!foundIntersect){//没法叠加，则新增
+					newResVec.push_back(noMoveMsk_i); //pushback 不会影响上面的 k 迭代， 因为 k < origResSz
+				}
+			}//for
+
+			return newResVec;
+		}//if
+
+		return resVec;
 	}//findFgMasksUseBbox
 
 #if CV_VERSION_MAJOR >= 3
+	cv::Mat seedUseBGS(Mat &dmat, bool isNewFrame /*= true*/, bool usePre /*= false*/, bool debugDraw /*= false*/){
+		Mat dm_show, tmp;
+		dmat.convertTo(dm_show, CV_8UC1, 1.*UCHAR_MAX / MAX_VALID_DEPTH);
+
+		int history = 500;
+		double varThresh = 1;
+		bool detectShadows = false;
+		static Ptr<BackgroundSubtractorMOG2> pMOG2 =
+			//createBackgroundSubtractorMOG2();// 500, 5, false);
+			createBackgroundSubtractorMOG2(history, varThresh, detectShadows);
+
+		Mat bgImg, fgMskMOG2;
+		static Mat prevFgMskMOG2;
+		static Mat prevDmat;
+		static bool isFirstTime = true;
+
+		if (isFirstTime || isNewFrame){
+
+			double learningRate = .1281;
+			//接收 mat-type 必须为 8uc1, or 8uc3:
+			pMOG2->apply(dm_show, fgMskMOG2, learningRate);// , .83);
+
+			fgMskMOG2 &= (dmat != 0);
+			if (debugDraw)
+				imshow("fgMskMOG2", fgMskMOG2);
+
+			int anch = 2;
+			Mat morphKrnl = getStructuringElement(MORPH_RECT, Size(2 * anch + 1, 2 * anch + 1), Point(anch, anch));
+			erode(fgMskMOG2, tmp, morphKrnl);
+			fgMskMOG2 = tmp;
+
+			//---------------
+			prevFgMskMOG2 = fgMskMOG2;
+			isFirstTime = false;
+			prevDmat = dmat.clone();
+		}
+		else{
+			CV_Assert(countNonZero(prevDmat != dmat) == 0);
+			fgMskMOG2 = prevFgMskMOG2;
+		}
+
+		pMOG2->getBackgroundImage(bgImg);
+		if (debugDraw)
+			imshow("bgImg", bgImg);
+
+		return fgMskMOG2;
+	}//seedUseBGS
 
 	vector<Mat> findFgMasksUseBGS(Mat &dmat, bool usePre /*= false*/, bool debugDraw /*= false*/, OutputArray _debug_mat /*= noArray()*/){
 		vector<Mat> res;
@@ -1157,31 +1311,8 @@ namespace zc{
 			debug_mat.setTo(0);
 		}
 
-		Mat dm_show;
-		dmat.convertTo(dm_show, CV_8UC1, 1.*UCHAR_MAX / MAX_VALID_DEPTH);
-
-		int history = 500;
-		double varThresh = 1;
-		bool detectShadows = false;
-		static Ptr<BackgroundSubtractorMOG2> pMOG2 = 
-			//createBackgroundSubtractorMOG2();// 500, 5, false);
-			createBackgroundSubtractorMOG2(history, varThresh, detectShadows);
-
-		Mat bgImg, fgMskMOG2;
-		double learningRate = .1281;
-		pMOG2->apply(dm_show, fgMskMOG2, learningRate);// , .83);
-		pMOG2->getBackgroundImage(bgImg);
-		if (debugDraw)
-			imshow("bgImg", bgImg);
-
-		fgMskMOG2 &= (dmat != 0);
-		if (debugDraw)
-			imshow("fgMskMOG2", fgMskMOG2);
-
-		int anch = 2;
-		Mat morphKrnl = getStructuringElement(MORPH_RECT, Size(2 * anch + 1, 2 * anch + 1), Point(anch, anch));
-		erode(fgMskMOG2, fgMskMOG2, morphKrnl);
-		
+		bool isNewFrame = true;
+		Mat fgMskMOG2 = seedUseBGS(dmat, isNewFrame, usePre, debugDraw);
 		if (debugDraw){
 			imshow("fgMskMOG2-erode", fgMskMOG2);
 			//debug_mat = fgMskMOG2; //shallow-copy, ×
@@ -1196,6 +1327,31 @@ namespace zc{
 		return res;
 	}//findFgMasksUseBGS
 #endif
+
+
+	cv::Mat seedNoMove(Mat dmat, Mat mask, int thresh /*= 50*/){
+		Mat res = mask.clone();
+
+		//第一次调用时 prevDmat 全黑，因而diff > thresh，返回的 mask 应该也全黑：
+		static Mat prevDmat = Mat::zeros(dmat.size(), dmat.type());
+
+		res &= (cv::abs(dmat - prevDmat) < thresh);
+
+		prevDmat = dmat.clone();
+
+		return res;
+	}//seedNoMove
+
+	vector<Mat> seedNoMove(Mat dmat, vector<Mat> masks, int thresh /*= 50*/){
+		vector<Mat> res;
+		size_t mskVecSize = masks.size();
+		for (size_t i = 0; i < mskVecSize; i++){
+			Mat newMask = seedNoMove(dmat, masks[i], thresh);
+			res.push_back(newMask);
+		}
+
+		return res;
+	}//seedNoMove
 
 	Mat getHumansMask(vector<Mat> masks, Size sz){
 	//Mat getHumansMask( vector<Mat> masks ){

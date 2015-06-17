@@ -34,24 +34,63 @@ namespace zc{
 
 	Point seedSimple(Mat dmat, int *outVeryDepth = 0, bool debugDraw = false);
 
+	//尝试从 findFgMasksUseBbox 剥离解耦, √
+	//用正视图、俯视图两种 bbox 求交，判定人体轮廓位置
+	//注：
+	// 1. 若 debugDraw = true, 则 _debug_mat 必须传实参
+	// 2. 返回值 vector<vector<Point>> 实际就是挑选过的 contours
 	vector<vector<Point>> seedUseBbox(Mat dmat, bool debugDraw = false, OutputArray _debug_mat = noArray());
 
 	//1. 找背景大墙面；
 	//2. 若没墙，说明背景空旷，物理高度判定剔除(<2500mm)
 	//3. 剩余最高点做种子点
-	vector<Mat> findFgMasksUseWallAndHeight(Mat dmat, bool debugDraw = false);
+	vector<Mat> findFgMasksUseWallAndHeight(Mat dmat, bool usePre = false, bool debugDraw = false);
 
 
 	//Mat simpleRegionGrow(const Mat &dmat, Point seed, int thresh, bool debugDraw = false);
+
+	//Point seed, Rect roi
 	Mat _simpleRegionGrow(const Mat &dmat, Point seed, int thresh, const Rect roi, bool debugDraw = false);
+
+	//vector<Point> seeds, Rect roi
 	Mat _simpleRegionGrow(const Mat &dmat, vector<Point> seeds, int thresh, const Rect roi, bool debugDraw = false);
 
+	//mask 为是否有效增长 flag， 若某像素黑(0), 则此处终止，去看别处
 	Mat _simpleRegionGrow(const Mat &dmat, Point seed, int thresh, const Mat &mask, bool debugDraw = false);
+
+	//_simpleRegionGrow 核心函数：
 	Mat _simpleRegionGrow(const Mat &dmat, vector<Point> seeds, int thresh, const Mat &mask, bool debugDraw = false);
-	vector<Mat> simpleRegionGrow(const Mat &dmat, vector<Point> seeds, int thresh, const Mat &mask, bool getMultiMasks = false, bool debugDraw = false);
 
+	//先 seedsMask -> vector<Point> seeds，再调用重载
+	Mat _simpleRegionGrow(const Mat &dmat, Mat seedsMask, int thresh, const Mat &mask, bool debugDraw = false);
 
-	//三个默认参数(flrKrnl, mskThresh, morphRadius) 版 
+	//N个种子点， 
+	//1. getMultiMasks = false, 尽可能增长为多个mask
+	//2. getMultiMasks = true, 增长为一个mask, 不管是否连成片，存在位置[0]。
+	vector<Mat> simpleRegionGrow(const Mat &dmat, vector<Point> seedsVec, int thresh, const Mat &mask, bool getMultiMasks = false, bool debugDraw = false);
+
+	//先 seedsMask -> vector<Point> seeds, 再调用重载
+	vector<Mat> simpleRegionGrow(const Mat &dmat, Mat seedsMask, int thresh, const Mat &mask, bool getMultiMasks = false, bool debugDraw = false);
+
+	//N个种子点vector， 增长为N个mask
+	vector<Mat> simpleRegionGrow(const Mat &dmat, vector<vector<Point>> seedsVecOfVec, int thresh, const Mat &mask, bool debugDraw = false);
+
+	//N个种子点mask， 增长为N个mask
+	vector<Mat> simpleRegionGrow(const Mat &dmat, vector<Mat> sdMats, int thresh, const Mat &mask, bool debugDraw = false);
+	
+	//---------------@deprecated, 错误思路，不该有特定经验性限制！
+// 	vector<Mat> simpleRegionGrow(Mat dmat, Mat seedsMask, int thresh, Mat mask);
+
+	//返回一个 mask-mat; type: 8uc1, 用白色 UCHAR_MAX 点表示有效点
+	Mat pts2maskMat(const vector<Point> pts, Size matSz);
+
+	//maskMat: type 8uc1, 白色 UCHAR_MAX 点表示有效点
+	vector<Point> maskMat2pts(Mat maskMat);
+
+	//三个默认参数(flrKrnl, mskThresh, morphRadius) 版：
+	//flrKrnl = { 1, 1, 1, -1, -1, -1 };
+	//mskThresh = 100;
+	//morphRadius = 3;
 	Mat getFloorApartMask(Mat dmat, bool debugDraw = false);
 	//返回：用于去除地板的mask
 	Mat getFloorApartMask(Mat dmat, Mat flrKrnl, int mskThresh, int morphRadius, bool debugDraw = false);
@@ -96,14 +135,26 @@ namespace zc{
 	//用正视图、俯视图两种 bbox 求交，判定人体轮廓位置
 	//注：
 	// 1. 若 debugDraw = true, 则 _debug_mat 必须传实参
-	vector<Mat> findFgMasksUseBbox(Mat &dmat, bool debugDraw = false, OutputArray _debug_mat = noArray());
+	vector<Mat> findFgMasksUseBbox(Mat &dmat, bool usePre = false, bool debugDraw = false, OutputArray _debug_mat = noArray());
 
 #if CV_VERSION_MAJOR >= 3
+	//尝试从findFgMasksUseBbox 剥离解耦
+	//用 MOG2 背景减除，得到前景点， erode 得到比较大的前景区域
+	//注：
+	//1. 用到时序信息(history)！一次循环中尽量避免多次调用；如必须，置位 isNewFrame = false
+	Mat seedUseBGS(Mat &dmat, bool isNewFrame = true, bool usePre = false, bool debugDraw = false);
+
 	//用 opencv300 background-subtraction 方法提取运动物体（不必是人,e.g.:转椅）轮廓
 	//1. bgs -> roi; 2. region-grow -> vector<Mat>; 3. bbox etc. 判定; 4. usePre 时序上，重心判定
 	//
 	vector<Mat> findFgMasksUseBGS(Mat &dmat, bool usePre = false, bool debugDraw = false, OutputArray _debug_mat = noArray());
 #endif
+
+	//在前一帧找到的前景mask范围内，前后帧深度值变化不大(diff < thresh)的像素点，作为新候选点。
+	//返回新候选点mask
+	Mat seedNoMove(Mat dmat, Mat mask, int thresh = 50);
+	vector<Mat> seedNoMove(Mat dmat, vector<Mat> masks, int thresh = 50);
+
 
 	//返回不同灰度标记前景的mat
 	Mat getHumansMask(vector<Mat> masks, Size sz);
