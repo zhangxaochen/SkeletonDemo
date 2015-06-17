@@ -19,18 +19,21 @@ using namespace cv;
 // 	bg_count=0;
 // }
 
-segment::segment(bool show_result1,bool show_depth_without_bg1,
-	bool show_topdown_view1,bool show_topdown_binary1)
-{
-	show_result=show_result1;
-	show_depth_without_bg=show_depth_without_bg1;
-	show_topdown_view=show_topdown_view1;
-	show_topdown_binary=show_topdown_binary1;
-}
+// segment::segment(bool show_result1,bool show_depth_without_bg1,
+// 	bool show_topdown_view1,bool show_topdown_binary1)
+// {
+// 	show_result=show_result1;
+// 	show_depth_without_bg=show_depth_without_bg1;
+// 	show_topdown_view=show_topdown_view1;
+// 	show_topdown_binary=show_topdown_binary1;
+// }
+
+segment::segment(){}
 
 void segment::set_depthMap(const cv::Mat& depth)
 {
-	depth_map=depth.clone();	
+	depth_map=depth.clone();
+	depth_map.convertTo(depth_map,CV_32F);
 	double dmax,dmin;
 	minMaxLoc(depth_map,&dmin,&dmax);
 	max_depth=dmax;min_depth=dmin;
@@ -164,13 +167,14 @@ Mat segment::get_result()
 {
 	return interest_point2.clone();
 }
-void segment::compute()
+vector<Point> segment::seedSGF(Mat dmat,bool showResult,Mat& depth_without_bg)
 {
+	set_depthMap(dmat);
 	//fill_holes();
 
-	compute_height();
-
 	compute_hist();
+
+	compute_height();
 
 	smooth_image();
 
@@ -178,26 +182,22 @@ void segment::compute()
 
 	sjbh();
 
-	if (show_result)
+	if (showResult)
 	{
 		imshow("result",gray_clone);
 		waitKey(1);
-	}
-	if (show_depth_without_bg)
-	{
-		imshow("depth without bg",gray_map);
+		imshow("depth without bg mask",depth_mask);
 		waitKey(1);
-	}
-	if (show_topdown_view)
-	{
 		imshow("top down view",depth_sjbh);
 		waitKey(1);
-	}
-	if (show_topdown_binary)
-	{
 		imshow("top down view binary",sjbh_binary);
 		waitKey(1);
 	}
+// 	imshow("depth mask",depth_mask);
+// 	waitKey(1);
+
+	depth_without_bg=depth_mask.clone();
+	return get_seed();
 // 	show_difference();
 // 
 // 	double my_max=0;
@@ -343,7 +343,8 @@ bool segment::read_config(const std::string &configPath)
 			>>threshold_binary_response>>threshold_contour_size
 			>>threshold_contour_ckb>>threshold_headsize_min>>threshold_headsize_max
 			>>a>>const_depth
-			>>distance_type>>mask_type;
+			>>distance_type>>mask_type
+			>>height>>bar_width>>depth_rate1>>depth_rate2;
 
 		config_file.close();
 	}
@@ -538,7 +539,7 @@ void segment::seperate_foot_and_ground()
 }
 void segment::compute_hist()
 {
-	double step_length=100;
+	double step_length=bar_width;
 	minMaxLoc(depth_map,&min_depth,&max_depth);
 	float range[]={min_depth,max_depth};
 	int histSize=(max_depth-min_depth)/step_length;
@@ -549,11 +550,15 @@ void segment::compute_hist()
 // 	waitKey(1);
 	calcHist( &depth_map, 1, 0, Mat(), histogram_image, 1, &histSize, &histRange, uniform, accumulate );
 
+/*	cout<<histogram_image<<endl;*/
+
 	double tmp_max,tmp_min;
 	minMaxLoc(histogram_image,&tmp_min,&tmp_max);
 
-	double trs=depth_map.rows*depth_map.cols*1.0/100;
+	double trs=depth_map.rows*depth_map.cols*1.0/depth_rate1;
 	double sep=max_depth;
+	double total_trs=depth_map.rows*depth_map.cols*1.0/depth_rate2;
+	double total_number=0;
 	for (int i=histogram_image.rows-1;i>=0;--i)
 	{
 		bool find_max=false;
@@ -577,30 +582,27 @@ void segment::compute_hist()
 		{
 			sep=(i-1)*step_length;break;
 		}
+		total_number+=cur_number;
+		if (total_number>=total_trs)
+		{
+			sep=(i-1)*step_length;break;
+		}
 	}
 //	cout<<"depth threshold: "<<sep<<endl;
+	depth_mask=Mat::zeros(depth_map.rows,depth_map.cols,CV_8U);
+// 	imshow("11111",depth_mask);
+// 	waitKey(1);
 	for (int i=0;i<depth_map.rows;++i)
 	{
 		for (int j=0;j<depth_map.cols;++j)
 		{
 			double depth=depth_map.at<float>(i,j);
-			if (depth>sep)
+			if (depth>sep||depth==0)
 			{
-				depth_map.at<float>(i,j)=0;
+				depth_mask.at<uchar>(i,j)=255;
 			}
 		}
 	}
-
-	int erode_size=3;
-	Mat element = getStructuringElement( MORPH_RECT,
-		Size( 2*erode_size + 1, 2*erode_size+1 ),
-		Point( erode_size, erode_size ) );
-	int dilate_size=3;
-	Mat element1 = getStructuringElement( MORPH_RECT,
-		Size( 2*dilate_size + 1, 2*dilate_size+1 ),
-		Point( dilate_size, dilate_size ) );
-	erode( depth_map, depth_map,element);
-	dilate( depth_map, depth_map,element1);
 
 	//int histSize=10;
 // 	int hist_w = 900; int hist_h = 500;
@@ -811,8 +813,9 @@ void segment::sjbh()
 		for (int j=depth_map.rows-1;j>=0;--j)
 		{
 			int flag=filter_map.at<uchar>(j,i);
+			int flag1=depth_mask.at<uchar>(j,i);
 			//cout<<flag<<endl;
- 			if (flag<100)
+ 			if (flag<100&&flag1!=0)
  			{
 				int val=gray_map.at<uchar>(j,i);
 				depth_sjbh.at<float>(255-val,i)=255-j;
@@ -873,7 +876,7 @@ void segment::sjbh()
 			{
 				for (int y=0;y<depth_map.rows;++y)
 				{
-					if (depth_map.at<float>(y,x)!=0)
+					if (depth_mask.at<uchar>(y,x)!=0)
 					{
 						Point2i p;
 						p.x=x;p.y=y;
@@ -891,9 +894,11 @@ void segment::sjbh()
 }
 void segment::set_background(const Mat& bg)
 {
+	Mat bg_tmp=bg.clone();
+	bg_tmp.convertTo(bg_tmp,CV_32F);
 	if (background_depth.data==NULL)
 	{
-		background_depth=bg.clone();
+		background_depth=bg_tmp.clone();
 	}
 	if (bg_count<50)
 	{
@@ -902,7 +907,7 @@ void segment::set_background(const Mat& bg)
 			for (int j=0;j<bg.cols;++j)
 			{
 				background_depth.at<float>(i,j)=
-					max(background_depth.at<float>(i,j),bg.at<float>(i,j));
+					max(background_depth.at<float>(i,j),bg_tmp.at<float>(i,j));
 			}
 		}
 		bg_count++;
@@ -986,10 +991,22 @@ void segment::compute_height()
 			double height=height_map.at<float>(j,i);
 			if (height<height_max-abs_height)
 			{
-				depth_map.at<float>(j,i)=0;
+				depth_mask.at<uchar>(j,i)=255;
 			}
 		}
 	}
+	
+	threshold(depth_mask,depth_mask,128,255,THRESH_BINARY_INV);
+	int erode_size=3;
+	Mat element = getStructuringElement( MORPH_RECT,
+		Size( 2*erode_size + 1, 2*erode_size+1 ),
+		Point( erode_size, erode_size ) );
+	int dilate_size=3;
+	Mat element1 = getStructuringElement( MORPH_RECT,
+		Size( 2*dilate_size + 1, 2*dilate_size+1 ),
+		Point( dilate_size, dilate_size ) );
+	erode( depth_mask, depth_mask,element);
+	dilate( depth_mask, depth_mask,element1);
 // 	imshow("depth after cut",depth_map);
 // 	waitKey(1);
 }

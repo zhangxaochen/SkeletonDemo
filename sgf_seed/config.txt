@@ -1,4 +1,4 @@
-sgf_zc_w_feet.oni
+sgf-zc-sit-no-front-desk-wall.oni
 30 90
 50
 100 200
@@ -7,3 +7,4 @@ sgf_zc_w_feet.oni
 0.25 1
 2.25 50
 2 0
+2000 100 50 2

@@ -28,7 +28,7 @@ int main(int argc, char* argv[])
 }
 void OpenNItoOpenCV()
 {
-	segment my_seg(true,true,true,true);
+	segment my_seg;
 	my_seg.read_config("config.txt");
 	string sFilename=my_seg.videoname;
 
@@ -101,7 +101,7 @@ plyr.SeekToFrame("MyDepth", 999, XN_PLAYER_SEEK_SET);
 			double m1,m2;
 			minMaxLoc(depth,&m1,&m2);
 			
-			depth.convertTo(depth,CV_32F);
+			//depth.convertTo(depth,CV_32F);
 // 			Mat head=imread("headtemplate.bmp");
 // 			if(head.channels()!=1)
 // 			 cvtColor(head,head,CV_BGR2GRAY);
@@ -111,12 +111,20 @@ plyr.SeekToFrame("MyDepth", 999, XN_PLAYER_SEEK_SET);
 			itoa(number,name,10);
 			string s=name;
 
-			my_seg.set_name(s);
-			my_seg.set_depthMap(depth);
-			my_seg.set_background(depth);
-			my_seg.set_headTemplate2D("headtemplate.bmp");
+			//my_seg.set_name(s);
+			//my_seg.set_depthMap(depth);
+			//my_seg.set_background(depth);
+			//my_seg.set_headTemplate2D("headtemplate.bmp");
 
-			my_seg.compute();
+			vector<Point> seed;
+			Mat mask;
+
+			seed=my_seg.seedSGF(depth,true);
+			//seed=my_seg.seedSGF(depth,true,mask);
+
+
+			//imshow("mask",mask);waitKey(1);
+			cout<<"seed number: "<<seed.size()<<endl;
 			//my_seg.find_circles();
 			//my_seg.find_realHead();
 
