@@ -1,6 +1,9 @@
 #include <iostream>
 #include "SimpleSilhouette.h"
 
+//abs-diff 时选用当前点深度还是平均深度：
+const int mode = 01; //0当前， 1平均
+
 namespace zc{
 
 //from CKernal.cpp
@@ -137,33 +140,96 @@ namespace zc{
 		return res;
 	}//seedSimple
 
+	Mat getBgMskUseWallAndHeight(Mat dmat){
+		int wallDepth = zc::fetchWallDepth(dmat);
+		Mat initBgMsk;
+		//若无大墙面， 背景较空旷， 用物理高度判定剔除(<2500mm)
+		//包括： wallDepth < 0 以及因人离相机太近(<1500mm)，身体被判定为墙面的情形
+		if (wallDepth < 1500){
+			Mat heightMsk = getHeightMask(dmat, 2500);
+			initBgMsk = (heightMsk == 0);
+		}
+		else{ //wallDepth > 0； 有墙面
+			initBgMsk = (dmat >= wallDepth);
+		}
+
+		//增长出一个背景，thresh 要 <= 前景的 ！
+		int rgThresh = 55;
+		//还是需要去除地面，否则错！
+		Mat flrApartMask = zc::fetchFloorApartMask(dmat, false);
+		Mat bgMsk = zc::simpleRegionGrow(dmat, initBgMsk, rgThresh, flrApartMask, false, false)[0];
+
+		return bgMsk;
+	}//getBgMskUseWallAndHeight
+
+	Mat fetchBgMskUseWallAndHeight(Mat dmat){
+		static Mat res;
+
+		static Mat dmatOld;// = dmat.clone();
+		if (dmatOld.empty() || countNonZero(dmatOld != dmat) > 0)
+			res = getBgMskUseWallAndHeight(dmat);// , debugDraw);
+
+		return res;
+	}//fetchBgMskUseWallAndHeight
+
+
 	//1. 找背景大墙面；
 	//2. 若没墙，说明背景空旷，物理高度判定剔除(<2500mm)
 	//3. 剩余最高点做种子点
-	vector<Mat> findFgMasksUseWallAndHeight(Mat dmat, bool usePre /*= false*/, bool debugDraw /*= false*/){
+	vector<Mat> findFgMasksUseWallAndHeight(Mat dmat, /*bool usePre / *= false* /, */bool debugDraw /*= false*/){
 		//vector<Mat> res;
+		//clock_t begttotal = clock();
+		clock_t begt = clock();
 
 		Mat maskedDmat = dmat.clone();
-		int wallDepth = zc::getWallDepth(dmat);
-		if (wallDepth < 0){//无大墙面， 背景较空旷， 用物理高度判定剔除(<2500mm)
-			Mat heightMsk = getHeightMask(dmat, 2500);
-			maskedDmat.setTo(0, heightMsk == 0);
-
-			return findFgMasksUseBbox(maskedDmat, false, debugDraw);
-		}
-		else{ //wallDepth > 0； 有墙面
-			maskedDmat.setTo(0, dmat > wallDepth);
-
-			Mat tmp;
-// 			vector<vector<Point>> dtrans_cont_good = zc::distMap2contours(dmat, true, tmp);
+// 		int wallDepth = zc::getWallDepth(dmat);
+// 		Mat initBgMsk;
 // 
-// 			vector<vector<Point>> tdv_cont_good = zc::dmat2TopDownView(dmat, true, tmp);
+// 		//若无大墙面， 背景较空旷， 用物理高度判定剔除(<2500mm)
+// 		//包括： wallDepth < 0 以及因人离相机太近(<1500mm)，身体被判定为墙面的情形
+// 		if (wallDepth < 1500){
+// 			Mat heightMsk = getHeightMask(dmat, 2500);
+// 			//maskedDmat.setTo(0, heightMsk == 0);
+// 			initBgMsk = (heightMsk == 0);
 // 
-			debugDraw = true;
-			//bool usePre = true;
-			return findFgMasksUseBbox(maskedDmat, usePre, debugDraw, tmp);
+// // 			Mat tmp;
+// // 			return findFgMasksUseBbox(maskedDmat, false, debugDraw, tmp);
+// 		}
+// 		else{ //wallDepth > 0； 有墙面
+// 			//maskedDmat.setTo(0, dmat > wallDepth);
+// 
+// 			initBgMsk = (dmat >= wallDepth);
+// 		}
+// 
+// 		if (debugDraw)
+// 			cout << "findFgMasksUseWallAndHeight.part1.ts: " << clock() - begt << endl;
+// 
+// 		begt = clock();
+// 
+// 		//增长出一个背景
+// 		int rgThresh = 55;
+// 		//还是需要去除地面，否则错！
+// 		Mat flrApartMask = zc::fetchFloorApartMask(dmat, false);
+// 		Mat bgMsk = zc::simpleRegionGrow(dmat, initBgMsk, rgThresh, flrApartMask, false, false)[0];
+
+		Mat bgMsk = fetchBgMskUseWallAndHeight(dmat);
+		maskedDmat.setTo(0, bgMsk);
+
+		if (debugDraw)
+			cout << "findFgMasksUseWallAndHeight.part2.ts: " << clock() - begt << endl;
+
+		if (debugDraw){
+			Mat maskedDmat_show;
+			normalize(maskedDmat, maskedDmat_show, 0, UCHAR_MAX, NORM_MINMAX, CV_8UC1);
+			imshow("maskedDmat", maskedDmat_show);
 		}
-	}
+
+		Mat tmp;
+		// 			debugDraw = true;
+		//bool usePre = true;
+		return findFgMasksUseBbox(maskedDmat, /*usePre, */debugDraw, tmp);
+
+	}//findFgMasksUseWallAndHeight
 
 	Mat simpleMask(const Mat &curMat, bool debugDraw){
 		static bool isFirst = true;
@@ -202,27 +268,267 @@ namespace zc{
 		Mat _mask = Mat::zeros(dmat.size(), CV_8UC1);
 		_mask(roi).setTo(UCHAR_MAX);
 
-		return _simpleRegionGrow(dmat, seeds, thresh, _mask, debugDraw);
+		return _simpleRegionGrow_core_vec2mat(dmat, seeds, thresh, _mask, debugDraw);
 	}//simpleRegionGrow
 
-	Mat _simpleRegionGrow( const Mat &dmat, Point seed, int thresh, const Mat &mask, bool debugDraw /*= false*/ ){
+	//
+	Mat _simpleRegionGrow_core_pt2mat(const Mat &dmat, Point seed, int thresh, const Mat &validMask, bool debugDraw /*= false*/){
+		//1. 2015年6月22日21:55:54 还是改回用 core_vec2mat 版本：
 		vector<Point> seeds;
 		seeds.push_back(seed);
 
-		return _simpleRegionGrow(dmat, seeds, thresh, mask, debugDraw);
-	}//simpleRegionGrow
+		return _simpleRegionGrow_core_vec2mat(dmat, seeds, thresh, validMask, debugDraw);
 
-	Mat _simpleRegionGrow(const Mat &dmat, vector<Point> seeds, int thresh, const Mat &mask, bool debugDraw /*= false*/){
-
+		//2. 2015年6月22日20:17:29：这个定为核心函数
+		//在 mode=0时，效率一般；mode=1时，大墙面场景因频繁调用此函数，效率低(caller core_mat2mat： ~30ms)
 		Size sz = dmat.size();
 		int hh = sz.height,
 			ww = sz.width;
 
-// 		//实际进行区域增长的 roi：
-// 		int top = max(0, roi.y),
-// 			left = max(0, roi.x),
-// 			bottom = min(hh, roi.y + roi.height),
-// 			right = min(ww, roi.x + roi.width);
+		Rect dmRect(Point(), dmat.size());
+
+		//1. init
+		//存标记：0未查看， 1在queue中， 255已处理过neibor；最终得到的正是 mask
+		Mat flagMat = Mat::zeros(sz, CV_8UC1);
+
+		//存满足条件的点
+		queue<Point> pts;
+
+		//abs-diff 时选用当前点深度还是平均深度：
+		const int mode = 01; //0当前， 1平均
+		//状态量：
+		double depAvg = 0; //前景点平均深度
+		size_t ptCnt = 0; //前景点个数
+
+
+		//初始种子点入队&标记，需满足条件：mask 有效
+// 		for (size_t i = 0; i < sdsVec.size(); i++){
+// 			Point sd = sdsVec[i];
+// 			//if(roi.contains(sd)){
+// 			if (validMask.at<uchar>(sd) == UCHAR_MAX){
+// 				flagMat.at<uchar>(sd) = 1;
+// 				pts.push(sd);
+// 			}
+// 		}
+		if (validMask.at<uchar>(seed) == UCHAR_MAX){
+			flagMat.at<uchar>(seed) = 1;
+			pts.push(seed);
+
+			//初始化平均深度：
+			depAvg = dmat.at<ushort>(seed); 
+		}
+
+		//目前增长看四邻域：
+		const int nnbr = 4;
+		int dx[nnbr] = { 0, -1, 0, 1 },
+			dy[nnbr] = { 1, 0, -1, 0 };
+
+		//2. loop
+		int maxPts = -1;
+		while (!pts.empty()){
+			int qsz = pts.size();
+			if (qsz > maxPts)
+				maxPts = qsz;
+
+			Point pt = pts.front();
+			const ushort& depPt = dmat.at<ushort>(pt);
+			pts.pop();
+
+			flagMat.at<uchar>(pt) = UCHAR_MAX;
+
+			//更新平均深度：
+			depAvg = (depAvg*ptCnt + depPt) / (ptCnt + 1);
+			ptCnt++;
+
+			for (int i = 0; i < nnbr; i++){
+				Point npt = pt + Point(dx[i], dy[i]);
+				//roi 判断不要了：
+				//if (left <= npt.x && npt.x < right && top <= npt.y && npt.y < bottom)
+				if (dmRect.contains(npt))
+				{
+					const ushort& depNpt = dmat.at<ushort>(npt);
+					uchar& flgNpt = flagMat.at<uchar>(npt);
+					if (flgNpt == 0
+						//&& abs(depPt - depNpt) <= thresh
+						//增加mask 判断：
+						&& validMask.at<uchar>(npt) == UCHAR_MAX){
+						//printf("val, nval: %d, %d\n", depPt, depNpt);
+
+// 						bool isOk = false;
+// 						switch (mode)
+// 						{
+// 						case 0:
+// 							isOk = abs(depPt - depNpt) <= thresh;
+// 							break;
+// 						case 1:
+// 							isOk = abs(depAvg - depNpt) <= thresh;
+// 							break;
+// 						default:
+// 							break;
+// 						}
+
+						bool isOk = abs((mode == 0 ? depPt : (ushort)depAvg) - depNpt) <= thresh;
+
+						if (isOk){
+							flgNpt = 1;
+							pts.push(npt);
+						}
+					}
+				}
+			}//for-i-nnbr
+
+		}//while
+
+// 		if (debugDraw){
+// 			//printf("maxPts: %d\n", maxPts);
+// 			imshow("simpleRegionGrow.flagMat", flagMat);
+// 			//cout<<flagMat(Rect(0,0, 5,5))<<endl;
+// 		}
+
+		return flagMat;
+	}//_simpleRegionGrow_core_pt2mat
+
+	//_simpleRegionGrow 【真】核心函数，效率高于 core_vec2mat：
+	Mat _simpleRegionGrow_core_mat2mat(const Mat &dmat, Mat sdsMat, int thresh, const Mat &validMask, bool debugDraw /*= false*/){
+		//1. core_vec2mat 改了， 所以调用之试试：
+// 		clock_t begt = clock();
+// 		Mat res = _simpleRegionGrow_core_vec2mat(dmat, maskMat2pts(sdsMat),
+// 			thresh, validMask, debugDraw);
+// 		cout << "_simpleRegionGrow_core_mat2mat.ts: " << clock() - begt << endl;
+// 		return res;
+
+		//2. 2015年6月22日20:38:31 之前版本
+		Size sz = dmat.size();
+		int hh = sz.height,
+			ww = sz.width;
+
+		Rect dmRect(Point(), dmat.size());
+		
+		//目前增长看四邻域：
+		const int nnbr = 4;
+		int dx[nnbr] = { 0, -1, 0, 1 },
+			dy[nnbr] = { 1, 0, -1, 0 };
+
+		//1. init
+		//存标记：0未查看， 1在queue中， 255已处理过neibor；最终得到的正是 mask
+		Mat flagMat = Mat::zeros(sz, CV_8UC1);
+
+		//存满足条件的点
+		queue<Point> pts;
+
+		//abs-diff 时选用当前点深度还是平均深度：
+		//经验证， mode==1时，效果很差， 因为均值妨碍了新点加入
+		const int mode = 0; //0当前， 1平均
+		//状态量：
+		double depAvg = 0; //前景点平均深度
+		size_t ptCnt = 0; //前景点个数
+
+		//初始种子点入队&标记，需满足条件：validMask 有效, 且四邻域【未全部】标记
+		for (size_t i = 0; i < dmat.rows; i++){
+			for (size_t j = 0; j < dmat.cols; j++){
+				Point pt(j, i);
+				if (sdsMat.at<uchar>(pt) == UCHAR_MAX
+					&& validMask.at<uchar>(pt) == UCHAR_MAX){
+					bool isInnerPt = true;
+					for (int k = 0; k < nnbr; k++){
+						int nx = j + dx[k];
+						int ny = i + dy[k];
+						Point npt(nx, ny);
+						if (dmRect.contains(npt)
+							&& sdsMat.at<uchar>(npt) == 0){
+							isInnerPt = false;
+							break;
+						}
+					}
+					if (!isInnerPt){ //轮廓点， 入队
+						flagMat.at<uchar>(pt) = 1;
+						pts.push(pt);
+					}
+					else{ //内点，直接标为已读
+						flagMat.at<uchar>(pt) = UCHAR_MAX;
+
+						//更新平均深度：
+						depAvg = (depAvg*ptCnt + dmat.at<ushort>(pt)) / (ptCnt + 1);
+						ptCnt++;
+
+					}
+				}
+			}//for-j
+		}//for-i
+
+
+		//2. loop
+		int maxPts = -1;
+		while (!pts.empty()){
+			int qsz = pts.size();
+			if (qsz > maxPts)
+				maxPts = qsz;
+
+			Point pt = pts.front();
+			const ushort& depPt = dmat.at<ushort>(pt);
+			pts.pop();
+
+			//更新平均深度：
+			depAvg = (depAvg*ptCnt + depPt) / (ptCnt + 1);
+			ptCnt++;
+
+			for (int i = 0; i < nnbr; i++){
+				Point npt = pt + Point(dx[i], dy[i]);
+				//roi 判断不要了：
+				//if (left <= npt.x && npt.x < right && top <= npt.y && npt.y < bottom)
+				if (dmRect.contains(npt))
+				{
+					const ushort& depNpt = dmat.at<ushort>(npt);
+					uchar& flgNpt = flagMat.at<uchar>(npt);
+					if (flgNpt == 0
+						//&& abs(depPt - depNpt) <= thresh //改为 isOk 判断
+						//增加mask 判断：
+						&& validMask.at<uchar>(npt) == UCHAR_MAX){
+						//printf("val, nval: %d, %d\n", depPt, depNpt);
+
+						bool isOk = abs((mode == 0 ? depPt : (ushort)depAvg) - depNpt) <= thresh;
+
+						if (isOk){
+							flgNpt = 1;
+							pts.push(npt);
+						}
+					}
+				}
+			}
+			flagMat.at<uchar>(pt) = UCHAR_MAX;
+		}//while
+
+		return flagMat;
+	}//_simpleRegionGrow_core
+
+	//_simpleRegionGrow 核心函数：
+	Mat _simpleRegionGrow_core_vec2mat(const Mat &dmat, vector<Point> sdsVec, int thresh, const Mat &validMask, bool debugDraw /*= false*/){
+		//1. 2015年6月22日20:31:38， 调用 core_pt2mat:
+// 		Mat res = Mat::zeros(dmat.size(), CV_8UC1);
+// 		size_t sdsVecSz = sdsVec.size();
+// 		for (size_t i = 0; i < sdsVecSz; i++){
+// 			Point sdi = sdsVec[i];
+// 
+// 			//若sdi不存在于之前任何一个mask，则新增长一个：
+// 			if (res.at<uchar>(sdi) == 0){
+// 				Mat newRgMat = _simpleRegionGrow_core_pt2mat(dmat, sdi, thresh, validMask, debugDraw);
+// 				res += newRgMat;
+// 			}
+// 		}
+// 
+// 		return res;
+
+
+		//2. 尝试改为调用 sdsMat 版本, 效率 fgMasksWallAndHeightSumt 19ms->16ms：
+		return _simpleRegionGrow_core_mat2mat(dmat, pts2maskMat(sdsVec, dmat.size()),
+			thresh, validMask, debugDraw);
+
+		//3. 2015年6月22日20:29:31 之前版本： 
+		Size sz = dmat.size();
+		int hh = sz.height,
+			ww = sz.width;
+
+		Rect dmRect(Point(), dmat.size());
 
 		//1. init
 		//存标记：0未查看， 1在queue中， 255已处理过neibor；最终得到的正是 mask
@@ -232,10 +538,10 @@ namespace zc{
 		queue<Point> pts;
 
 		//初始种子点入队&标记，需满足条件：mask 有效
-		for(size_t i=0; i<seeds.size(); i++){
-			Point sd = seeds[i];
+		for(size_t i=0; i<sdsVec.size(); i++){
+			Point sd = sdsVec[i];
 			//if(roi.contains(sd)){
-			if(mask.at<uchar>(sd) == UCHAR_MAX){
+			if(validMask.at<uchar>(sd) == UCHAR_MAX){
 				flagMat.at<uchar>(sd) = 1;
 				pts.push(sd);
 			}
@@ -262,14 +568,14 @@ namespace zc{
 				Point npt = pt + Point(dx[i], dy[i]);
 				//roi 判断不要了：
 				//if (left <= npt.x && npt.x < right && top <= npt.y && npt.y < bottom)
-				if (Rect(Point(), dmat.size()).contains(npt))
+				if (dmRect.contains(npt))
 				{
 					const ushort& depNpt = dmat.at<ushort>(npt);
 					uchar& flgNpt = flagMat.at<uchar>(npt);
 					if (flgNpt == 0
 						&& abs(depPt - depNpt) <= thresh
 						//增加mask 判断：
-						&& mask.at<uchar>(npt) == UCHAR_MAX){
+						&& validMask.at<uchar>(npt) == UCHAR_MAX){
 							//printf("val, nval: %d, %d\n", depPt, depNpt);
 							flgNpt = 1;
 							pts.push(npt);
@@ -279,23 +585,6 @@ namespace zc{
 			flagMat.at<uchar>(pt) = UCHAR_MAX;
 		}//while
 
-
-		//一般前景点个数约 ww*hh/10
-		static int prevFgPtCnt = ww*hh*15e-2;
-		static Mat prevFlagMat = flagMat.clone();
-
-		int currFgPtCnt = countNonZero(flagMat == UCHAR_MAX);
-		// 	//如果新一帧前景点个数突变： 1.增多 50%，可能是背景误入； 2.个数太少，可能区域增长失败。 则放弃之
-		// 	if(currFgPtCnt < ww*hh*1e-2 || currFgPtCnt*1./prevFgPtCnt > 1.5){
-		// 		printf("currFgPtCnt/prevFgPtCnt > 1.5: %d, %d\n", prevFgPtCnt, currFgPtCnt);
-		// 		flagMat = prevFlagMat;
-		// 	}
-		// 	else{
-		// 		printf("~currFgPtCnt/prevFgPtCnt > 1.5: %d, %d\n", prevFgPtCnt, currFgPtCnt);
-		// 		prevFgPtCnt = currFgPtCnt;
-		// 		prevFlagMat = flagMat;
-		// 	}
-
 		if (debugDraw){
 			//printf("maxPts: %d\n", maxPts);
 			imshow("simpleRegionGrow.flagMat", flagMat);
@@ -303,23 +592,32 @@ namespace zc{
 		}
 
 		return flagMat;
-	}//_simpleRegionGrow
+	}//_simpleRegionGrow_core_vec2mat
 
 
-	cv::Mat _simpleRegionGrow(const Mat &dmat, Mat seedsMask, int thresh, const Mat &mask, bool debugDraw /*= false*/)
-	{
+	cv::Mat _simpleRegionGrow(const Mat &dmat, Mat sdsMat, int thresh, const Mat &mask, bool debugDraw /*= false*/){
+		clock_t begt = clock();
 		//Mat sdPtsMat;
-		vector<Point> sdPtsMat;
-		findNonZero(seedsMask == UCHAR_MAX, sdPtsMat);
+		vector<Point> sdPtsVec;
+		findNonZero(sdsMat == UCHAR_MAX, sdPtsVec);
+		if (debugDraw){
+			cout << "sdPtsVec.size: " << sdPtsVec.size()
+				<< ", .ts: " << clock() - begt << endl;
+		}
 
-		return _simpleRegionGrow(dmat, seedsMask, thresh, mask, debugDraw);
-	}
+		return _simpleRegionGrow_core_vec2mat(dmat, sdPtsVec, thresh, mask, debugDraw);
+	}//_simpleRegionGrow
 
 	vector<Mat> simpleRegionGrow(const Mat &dmat, vector<Point> seedsVec, int thresh, const Mat &mask, bool getMultiMasks /*= false*/, bool debugDraw /*= false*/){
 		vector<Mat> res;
 		if(!getMultiMasks){
-			Mat msk = _simpleRegionGrow(dmat, seedsVec, thresh, mask, debugDraw);
+			clock_t begt = clock();
+
+			Mat msk = _simpleRegionGrow_core_vec2mat(dmat, seedsVec, thresh, mask, debugDraw);
 			res.push_back(msk);
+
+			//if (debugDraw)
+				cout << "_simpleRegionGrow_core.vec->mat:ts: " << clock() - begt << endl;
 		}
 		else{//getMultiMasks
 			size_t sdsz = seedsVec.size();
@@ -335,17 +633,35 @@ namespace zc{
 
 				//若sdi不存在于之前任何一个mask，则新增长一个：
 				if(!regionExists)
-					res.push_back(_simpleRegionGrow(dmat, sdi, thresh, mask, debugDraw));
+					res.push_back(_simpleRegionGrow_core_pt2mat(dmat, sdi, thresh, mask, debugDraw));
 			}
 		}
 		return res;
 	}//simpleRegionGrow
 
-	vector<Mat> simpleRegionGrow(const Mat &dmat, Mat seedsMask, int thresh, const Mat &mask, bool getMultiMasks /*= false*/, bool debugDraw /*= false*/){
-		vector<Point> sdsVec;
-		findNonZero(seedsMask == UCHAR_MAX, sdsVec);
+	vector<Mat> simpleRegionGrow(const Mat &dmat, Mat sdsMat, int thresh, const Mat &mask, bool getMultiMasks /*= false*/, bool debugDraw /*= false*/){
+		if (!getMultiMasks){
+			clock_t begt = clock();
 
-		return simpleRegionGrow(dmat, sdsVec, thresh, mask, getMultiMasks, debugDraw);
+			vector<Mat> res;
+			Mat msk = _simpleRegionGrow_core_mat2mat(dmat, sdsMat, thresh, mask, debugDraw);
+
+			//已验证， 5~7ms
+// 			vector<Point> sdsVec = maskMat2pts(sdsMat, 5);
+// 			Mat msk = _simpleRegionGrow_core_vec2mat(dmat, sdsVec, thresh, mask, debugDraw);
+
+			res.push_back(msk);
+
+			cout << "simpleRegionGrow.mat->mat:ts: " << clock() - begt << endl;
+			return res;
+		}
+		else{
+
+			vector<Point> sdsVec;
+			findNonZero(sdsMat == UCHAR_MAX, sdsVec);
+
+			return simpleRegionGrow(dmat, sdsVec, thresh, mask, getMultiMasks, debugDraw);
+		}
 	}//simpleRegionGrow
 
 
@@ -354,7 +670,7 @@ namespace zc{
 
 		size_t sz = seedsVecOfVec.size();
 		for (size_t i = 0; i < sz; i++){
-			res.push_back(_simpleRegionGrow(dmat, seedsVecOfVec[i], thresh, mask, debugDraw));
+			res.push_back(_simpleRegionGrow_core_vec2mat(dmat, seedsVecOfVec[i], thresh, mask, debugDraw));
 		}
 
 		return res;
@@ -384,9 +700,22 @@ namespace zc{
 	}//pts2maskMat
 
 
-	vector<Point> maskMat2pts(Mat maskMat){
+	vector<Point> maskMat2pts(Mat maskMat, int step /*= 1*/){
 		vector<Point> res;
-		findNonZero(maskMat == UCHAR_MAX, res);
+
+		clock_t begt = clock();
+
+		Mat tmp = Mat::zeros(maskMat.size(), maskMat.type());
+		for (size_t i = 0; i < tmp.rows; i += step){
+			for (size_t j = 0; j < tmp.cols; j += step){
+				tmp.at<uchar>(i, j) = maskMat.at<uchar>(i, j);
+			}
+		}
+		findNonZero(tmp == UCHAR_MAX, res);
+
+		//已验证， <1ms
+		cout << "maskMat2pts.ts: " << clock() - begt << endl;
+
 		return res;
 	}//maskMat2pts
 
@@ -534,7 +863,7 @@ namespace zc{
 
 	//与 getFloorApartMask 区别在于： 不是每次算， 只有 dmat 内容变了，才更新
 	Mat fetchFloorApartMask(Mat dmat, bool debugDraw /*= false*/){
-		Mat res;
+		static Mat res;
 
 		static Mat dmatOld;// = dmat.clone();
 		if (dmatOld.empty() || countNonZero(dmatOld != dmat) > 0)
@@ -542,6 +871,30 @@ namespace zc{
 
 		return res;
 	}//fetchFloorApartMask
+
+
+	Mat calcWidthMap(Mat dmat, int centerX /*= 0*/, bool debugDraw /*= false*/){
+		Mat res = dmat.clone(); //保持 cv16uc1 应该没错；
+
+		int ww = res.cols;
+		for (size_t j = 0; j < ww; j++){
+			Mat col = res.col(j);
+			col = col * (j - centerX) / XTION_FOCAL_XY;
+		}
+
+		return res;
+	}//calcWidthMap
+
+	Mat fetchWidthMap(Mat dmat, int centerX /*= 0*/, bool debugDraw /*= false*/){
+		static Mat res;
+
+		static Mat dmatOld;
+		if (dmatOld.empty() || countNonZero(dmatOld != dmat) > 0)
+			res = calcWidthMap(dmat, centerX, debugDraw);
+
+		return res;
+	}//fetchWidthMap
+
 
 	//计算物理尺度高度Mat：
 	cv::Mat calcHeightMap(Mat dmat, bool debugDraw /*= false*/)
@@ -560,9 +913,8 @@ namespace zc{
 	}//calcHeightMap
 
 	//与 calcHeightMap 区别在于： 不是每次算， 只有 dmat 内容变了，才更新
-	cv::Mat fetchHeightMap(Mat dmat, bool debugDraw /*= false*/)
-	{
-		Mat res;
+	Mat fetchHeightMap(Mat dmat, bool debugDraw /*= false*/){
+		static Mat res;
 
 		static Mat dmatOld;
 		if (dmatOld.empty() || countNonZero(dmatOld != dmat) > 0)
@@ -606,7 +958,8 @@ namespace zc{
 		float maxBarSum = 0;
 		int maxIdx = 0;
 		//i=1 开始：
-		for (int i = 1; i < histSize - winLen; i++){
+		//for (int i = 1; i < histSize - winLen; i++){
+		for (int i = 1; i < histSize - winLen; i += 50){
 
 			float barSumCnt = 0;
 			for (int k = i; k < i + winLen; k++){
@@ -619,27 +972,39 @@ namespace zc{
 			}
 		}
 
-		cout << "maxBarSum: " << maxBarSum << endl;
+		//cout << "maxBarSum: " << maxBarSum << endl;
 		if (maxBarSum < dmat.total() * 0.3)
 			//---------------返回 -1 表示没找到足够大的墙面：
 			return -1;
+		else{
+			//小范围[maxIdx, maxIdx+maxBarSum) 找峰值
+			float maxBarSum_2 = 0;
+			int maxIdx_2 = 0;
 
-		//小范围[maxIdx, maxIdx+maxBarSum) 找峰值
-		float maxBarSum_2 = 0;
-		int maxIdx_2 = 0;
-
-		for (int i = maxIdx; i < maxIdx + winLen; i++){
-			float barCnt = histo.at<float>(i);
-			if (maxBarSum_2 < barCnt){
-				maxIdx_2 = i;
-				maxBarSum_2 = barCnt;
+			for (int i = maxIdx; i < maxIdx + winLen; i++){
+				float barCnt = histo.at<float>(i);
+				if (maxBarSum_2 < barCnt){
+					maxIdx_2 = i;
+					maxBarSum_2 = barCnt;
+				}
 			}
+			//往前20cm：
+			//int wallDepth = maxIdx_2 - 200; //不要做特定经验性处理！
+			int wallDepth = maxIdx_2;
+			return wallDepth;
 		}
-		//往前20cm：
-		int wallDepth = maxIdx_2 - 200;
-		return wallDepth;
 	}//getWallDepth
 
+	int fetchWallDepth(Mat &dmat){
+		static int res;
+
+		static Mat dmatOld;
+		if (dmatOld.empty() || countNonZero(dmatOld != dmat) > 0)
+			res = getWallDepth(dmat);
+
+		return res;
+
+	}
 
 	void drawOneSkeleton(Mat &img, CapgSkeleton &sk){
 		line(img, Point(sk[0].x(), sk[0].y()), Point(sk[1].x(), sk[1].y()), Scalar(0), 2);
@@ -1177,77 +1542,171 @@ namespace zc{
 		return res;
 	}//seedUseBbox
 
-	vector<Mat> findFgMasksUseBbox(Mat &dmat, bool usePre /*= false*/, bool debugDraw /*= false*/, OutputArray _debug_mat /*= noArray()*/){
+	vector<Mat> findFgMasksUseBbox(Mat &dmat, /*bool usePre / *= false* /, */bool debugDraw /*= false*/, OutputArray _debug_mat /*= noArray()*/){
 	//vector<Mat> findHumanMasksUseBbox(Mat &dmat, bool debugDraw /*= false*/){
 		
 		vector<Mat> resVec;
 
+		clock_t begt = clock();
 		vector<vector<Point>> seedVec = seedUseBbox(dmat, debugDraw, _debug_mat);
+
+		if (debugDraw)
+			cout << "findFgMasksUseBbox.part1.ts: " << clock() - begt << endl;
+
 		size_t seedVecSize = seedVec.size();
 		
 		Mat flrApartMsk = fetchFloorApartMask(dmat, debugDraw);
 
+		begt = clock();
 		int rgThresh = 55;
 		for (size_t i = 0; i < seedVecSize; i++){
-			Mat msk = _simpleRegionGrow(dmat, seedVec[i], rgThresh,
+			Mat msk = _simpleRegionGrow_core_vec2mat(dmat, seedVec[i], rgThresh,
 				flrApartMsk, false);
 			resVec.push_back(msk);
 			//seedVec[i];
 		}
-		
-		//若启用时序信息【不动候选点】，后处理，用于补完此帧遗漏的前景：
-		static vector<Mat> prevMaskVec; //缓存上一帧抠像结果
-		if (usePre && prevMaskVec.size() == 0){
 
-			int noMoveThresh = 55;
+		if (debugDraw)
+			cout << "findFgMasksUseBbox.part2.ts: " << clock() - begt << endl;
+
+// 		begt = clock();
+// 		//若启用时序信息【不动候选点】，后处理，用于补完此帧遗漏的前景：
+// 		static vector<Mat> prevMaskVec; //缓存上一帧抠像结果findFgMasksUseWallAndHeight
+// 		if (usePre){// && prevMaskVec.size() != 0){
+// 			
+// 			if (debugDraw){
+// 				Mat prevMaskVec2msk = getHumansMask(prevMaskVec, dmat.size());
+// 				imshow("prevMaskVec2msk", prevMaskVec2msk);
+// 				//imwrite()
+// 			}
+// 
+// 			int noMoveThresh = 55;
+// 			vector<Mat> sdsUsePreVec = seedNoMove(dmat, prevMaskVec, noMoveThresh);
+// 
 // 			size_t prevVecSize = prevMaskVec.size();
-// 			for (size_t i = 0; i < prevVecSize; i++){
-// 				seedNoMove(dmat, prevMaskVec[i], noMoveThresh);
-// 			}
-			vector<Mat> sdsUsePre = seedNoMove(dmat, prevMaskVec, noMoveThresh);
-// 			size_t sdsUsePreSz = sdsUsePre.size();
-// 			for (size_t i = 0; i < sdsUsePreSz; i++){
-// 				sdsUsePre[i]
-// 			}
-
-			int rgThresh = 55;
-			//用不动点增长出的 mask-vec
-			vector<Mat> noMoveFgMskVec = simpleRegionGrow(dmat, sdsUsePre, rgThresh, flrApartMsk, debugDraw);
-
-			prevMaskVec = resVec;
-
-			//fgMskVec 与 res 叠加，求“或”
-			vector<Mat> newResVec = resVec;
-
-			//内外循环顺序与 newResVec 是谁(resVec or noMoveFgMskVec)有关
-			size_t noMoveFgMskVecSize = noMoveFgMskVec.size();
-			for (size_t i = 0; i < noMoveFgMskVecSize; i++){
-				Mat noMoveMsk_i = noMoveFgMskVec[i];
-
-				bool foundIntersect = false;
-
-				size_t origResSz = resVec.size();
-				for (size_t k = 0; k < origResSz; k++){
-					Mat resMsk_k = resVec[k];
-					//【暂定】只要相交，算作同一个mask
-					if (countNonZero(noMoveMsk_i & resMsk_k) != 0){
-						foundIntersect = true;
-						newResVec[k] = (noMoveMsk_i | resMsk_k); //原本 newResVec[k] == resMsk_k
-
-						//break; //求或，不要跳出
-					}
-				}
-
-				if (!foundIntersect){//没法叠加，则新增
-					newResVec.push_back(noMoveMsk_i); //pushback 不会影响上面的 k 迭代， 因为 k < origResSz
-				}
-			}//for
-
-			return newResVec;
-		}//if
+// // 			for (size_t i = 0; i < prevVecSize; i++){
+// // 				Mat morphKrnl = getMorphKrnl(5);
+// // 				//erode(prevMaskVec[i], prevMaskVec[i], morphKrnl);
+// // 
+// // 				Mat tmp = dmat>3000 & prevMaskVec[i];
+// // 				imshow("prevMaskVec" + std::to_string((long long)i) + "-error", tmp);
+// // 
+// // 				Mat tmp2 = dmat > 3000 & sdsUsePreVec[i];
+// // 				imshow("sdsUsePreVec" + std::to_string((long long)i) + "-error", tmp2);
+// // 
+// // 			}
+// 
+// 
+// 			int rgThresh = 55;
+// 			//用不动点增长出的 mask-vec
+// 			vector<Mat> noMoveFgMskVec = simpleRegionGrow(dmat, sdsUsePreVec, rgThresh, flrApartMsk, debugDraw);
+// 
+// 			//prevMaskVec = resVec; //错！ 应放在下面
+// 
+// 			//---------------fgMskVec 与 res 叠加，求“或”
+// 			vector<Mat> newResVec = resVec;
+// 
+// 			//内外循环顺序与 newResVec 是谁(resVec or noMoveFgMskVec)有关
+// 			size_t noMoveFgMskVecSize = noMoveFgMskVec.size();
+// 			for (size_t i = 0; i < noMoveFgMskVecSize; i++){
+// 				Mat noMoveMsk_i = noMoveFgMskVec[i];
+// 
+// 				bool foundIntersect = false;
+// 
+// 				size_t origResSz = resVec.size();
+// 				for (size_t k = 0; k < origResSz; k++){
+// 					Mat resMsk_k = resVec[k];
+// 					//【暂定】只要相交，算作同一个mask
+// 					if (countNonZero(noMoveMsk_i & resMsk_k) != 0){
+// 						foundIntersect = true;
+// 						//newResVec[k] = (noMoveMsk_i | resMsk_k); //原本 newResVec[k] == resMsk_k
+// 						newResVec[k] = noMoveMsk_i;
+// 
+// 						//break; //求或，不要跳出
+// 					}
+// 				}
+// 
+// 				if (!foundIntersect){//没法叠加，则新增
+// 					newResVec.push_back(noMoveMsk_i); //pushback 不会影响上面的 k 迭代， 因为 k < origResSz
+// 				}
+// 			}//for
+// 
+// 			prevMaskVec = newResVec;
+// 
+// 			if (debugDraw)
+// 				cout << "findFgMasksUseBbox.part3.ts: " << clock() - begt << endl;
+// 
+// 			return newResVec;
+// 		}//if (usePre)
 
 		return resVec;
 	}//findFgMasksUseBbox
+
+	vector<Mat> trackingNoMove(Mat dmat, const vector<Mat> &prevFgMaskVec, const vector<Mat> &currFgMskVec, bool debugDraw /*= false*/){
+		//static vector<Mat> prevFgMaskVec; //缓存上一帧抠像结果
+
+		if (debugDraw){
+			Mat prevMaskVec2msk = getHumansMask(prevFgMaskVec, dmat.size());
+			imshow("prevMaskVec2msk", prevMaskVec2msk);
+		}
+
+		int noMoveThresh = 55;
+		vector<Mat> sdsUsePreVec = seedNoMove(dmat, prevFgMaskVec, noMoveThresh); //√
+		//vector<Mat> sdsUsePreVec = seedNoMove(dmat, currFgMskVec, noMoveThresh);
+
+		if (debugDraw){
+			Mat tmp = dmat.clone();
+			if (sdsUsePreVec.size() > 0)
+				tmp.setTo(0, sdsUsePreVec[0]==0);
+			imshow("tmp", tmp);
+		}
+
+		//尝试555mm疯长：不行！ 单人结果好，多人结果差，只能折中：
+		int rgThresh = 55;
+		Mat flrApartMsk = fetchFloorApartMask(dmat, debugDraw);
+
+		//用不动点增长出的 mask-vec
+		//改为： flrApartMsk -> xxx
+		Mat bgMsk = fetchBgMskUseWallAndHeight(dmat);
+		Mat validMsk = flrApartMsk & (bgMsk == 0);
+// 		Mat maskedDmat = dmat.clone();
+// 		maskedDmat.setTo(0, fetchBgMskUseWallAndHeight(dmat));
+		vector<Mat> noMoveFgMskVec = simpleRegionGrow(dmat, sdsUsePreVec, rgThresh, validMsk, debugDraw);
+
+		//---------------fgMskVec 与 res 叠加，求“或”
+		vector<Mat> newResVec = currFgMskVec;
+		//内外循环顺序与 newResVec 是谁(resVec or noMoveFgMskVec)有关
+		size_t noMoveFgMskVecSize = noMoveFgMskVec.size();
+		for (size_t i = 0; i < noMoveFgMskVecSize; i++){
+			Mat noMoveMsk_i = noMoveFgMskVec[i];
+
+			bool foundIntersect = false;
+
+			size_t origResSz = currFgMskVec.size();
+			for (size_t k = 0; k < origResSz; k++){
+				Mat resMsk_k = currFgMskVec[k];
+				//【暂定】只要相交，算作同一个mask
+				if (countNonZero(noMoveMsk_i & resMsk_k) != 0){
+					foundIntersect = true;
+					//newResVec[k] = (noMoveMsk_i | resMsk_k); //原本 newResVec[k] == resMsk_k
+					newResVec[k] = noMoveMsk_i;
+
+					//break; //求或，不要跳出
+				}
+			}
+
+			if (!foundIntersect){//没法叠加，则新增
+				newResVec.push_back(noMoveMsk_i); //pushback 不会影响上面的 k 迭代， 因为 k < origResSz
+			}
+		}//for
+
+		//prevFgMaskVec = newResVec;
+
+// 		if (debugDraw)
+// 			cout << "findFgMasksUseBbox.part3.ts: " << clock() - begt << endl;
+
+		return newResVec;
+	}//trackingNoMove
 
 #if CV_VERSION_MAJOR >= 3
 	cv::Mat seedUseBGS(Mat &dmat, bool isNewFrame /*= true*/, bool usePre /*= false*/, bool debugDraw /*= false*/){
@@ -1329,24 +1788,32 @@ namespace zc{
 #endif
 
 
-	cv::Mat seedNoMove(Mat dmat, Mat mask, int thresh /*= 50*/){
+	Mat seedNoMove(Mat dmat, /*Mat prevDmat, */Mat mask, int thresh /*= 50*/){
+	//Mat seedNoMove(Mat dmat, Mat mask, int thresh /*= 50*/){
 		Mat res = mask.clone();
 
 		//第一次调用时 prevDmat 全黑，因而diff > thresh，返回的 mask 应该也全黑：
-		static Mat prevDmat = Mat::zeros(dmat.size(), dmat.type());
+// 		static Mat prevDmat = Mat::zeros(dmat.size(), dmat.type());
+		Mat prevDmat = getPrevDmat();
 
 		res &= (cv::abs(dmat - prevDmat) < thresh);
 
-		prevDmat = dmat.clone();
+		//prevDmat = dmat.clone();
 
 		return res;
 	}//seedNoMove
 
-	vector<Mat> seedNoMove(Mat dmat, vector<Mat> masks, int thresh /*= 50*/){
+	vector<Mat> seedNoMove(Mat dmat, /*Mat prevDmat, */vector<Mat> masks, int thresh /*= 50*/){
 		vector<Mat> res;
 		size_t mskVecSize = masks.size();
 		for (size_t i = 0; i < mskVecSize; i++){
-			Mat newMask = seedNoMove(dmat, masks[i], thresh);
+			Mat newMask = seedNoMove(dmat, /*prevDmat, */masks[i], thresh);
+
+			//为什么新候选点长在了背景墙上？ 
+			//可能边缘不稳定造成，尝试腐蚀确定这种原因：
+// 			Mat morphKrnl = getMorphKrnl(13);
+// 			erode(newMask, newMask, morphKrnl);
+
 			res.push_back(newMask);
 		}
 
@@ -1393,40 +1860,36 @@ namespace zc{
 		return res;
 	}//getHumansMask
 
-	vector<HumanFg> getHumanObjVec(Mat &dmat, vector<Mat> fgMasks){
+	void getHumanObjVec(Mat &dmat, vector<Mat> fgMasks, vector<HumanFg> &outHumVec)
+{
 		//全局队列：
-		static vector<HumanFg> humVec;
+		//static vector<HumanFg> outHumVec;
 
 		size_t fgMskSize = fgMasks.size(),
-			humVecSize = humVec.size();
+			humVecSize = outHumVec.size();
 
 		Mat dmatClone = dmat.clone();
 
-		//若尚未检测到过人，且单帧 fgMasks 有内容:
+		//若尚未检测到过人，且单帧 fgMasks 有内容（其实不必要）:
 		if (humVecSize == 0 && fgMskSize > 0){
 			cout << "+++++++++++++++humVecSize == 0" << endl;
 			for (size_t i = 0; i < fgMskSize; i++){
-				humVec.push_back({ dmatClone, fgMasks[i] });
+				outHumVec.push_back({ dmatClone, fgMasks[i] });
 			}
 		}
 		//若已检测到 HumanFg, 且单帧 fgMasks 无论有无内容可更新：
 		else if (humVecSize > 0){//&& fgMskSize > 0){
 
 			vector<bool> fgMsksUsedFlagVec(fgMskSize);
-			//对队列中现有的obj更新：
-// 			for (size_t i = 0; i < humVecSize; i++){
-// 				bool isUpdated = humVec[i].updateMask(dmatClone, fgMasks, fgMsksUsedFlagVec);
-// 
-// 			}
 
-			vector<HumanFg>::iterator it = humVec.begin();
-			while (it != humVec.end()){
+			vector<HumanFg>::iterator it = outHumVec.begin();
+			while (it != outHumVec.end()){
 				bool isUpdated = it->updateMask(dmatClone, fgMasks, fgMsksUsedFlagVec);
 				if (isUpdated)
 					it++;
 				else{
-					it = humVec.erase(it);
-					cout << "---------------humVec.erase" << endl;
+					it = outHumVec.erase(it);
+					cout << "------------------------------humVec.erase" << endl;
 				}
 			}//while
 
@@ -1435,14 +1898,11 @@ namespace zc{
 				if (fgMsksUsedFlagVec[i]==true)
 					continue;
 
-				humVec.push_back({ dmatClone, fgMasks[i] });
+				outHumVec.push_back({ dmatClone, fgMasks[i] });
 			}
 		}
-		////若已检测到过 HumanFg, 但是当前单帧 fgMasks 为空，全黑：
-		//else if (humVecSize > 0 && fgMskSize == 0){
 
-		//}
-		return humVec;
+		//return outHumVec;
 	}//getHumanObjVec
 
 	vector<Mat> bboxFilter(Mat dmat, const vector<Mat> &origMasks){
@@ -1485,6 +1945,19 @@ namespace zc{
 		return getStructuringElement(shape, Size(2 * radius + 1, 2 * radius + 1), Point(radius, radius));
 	}
 
+	static Mat prevDmat;
+	void setPrevDmat(Mat currDmat){
+		prevDmat = currDmat.clone();
+	}//setPrevDmat
+	
+	void initPrevDmat(Mat currDmat){
+		if (prevDmat.empty())
+			prevDmat = Mat::zeros(currDmat.size(), currDmat.type());
+	}//initPrevDmat
+
+	Mat getPrevDmat(){
+		return prevDmat;
+	}//getPrevDmat
 
 
 
