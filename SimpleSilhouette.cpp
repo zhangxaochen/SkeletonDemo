@@ -1550,8 +1550,11 @@ namespace zc{
 		clock_t begt = clock();
 		vector<vector<Point>> seedVec = seedUseBbox(dmat, debugDraw, _debug_mat);
 
-		if (debugDraw)
+		if (debugDraw){
 			cout << "findFgMasksUseBbox.part1.ts: " << clock() - begt << endl;
+			Mat tmp = dmat.clone();
+			drawContours(tmp, seedVec, -1, 255, 2);
+		}
 
 		size_t seedVecSize = seedVec.size();
 		
@@ -1560,10 +1563,21 @@ namespace zc{
 		begt = clock();
 		int rgThresh = 55;
 		for (size_t i = 0; i < seedVecSize; i++){
-			Mat msk = _simpleRegionGrow_core_vec2mat(dmat, seedVec[i], rgThresh,
-				flrApartMsk, false);
-			resVec.push_back(msk);
-			//seedVec[i];
+			bool isExist = false;
+			size_t resVecSz = resVec.size();
+			for (size_t k = 0; k < resVecSz; k++){
+				if (resVec[k].at<uchar>(seedVec[i][0]) == UCHAR_MAX){
+					isExist = true;
+					break;
+				}
+			}
+
+			if (!isExist){
+				Mat msk = _simpleRegionGrow_core_vec2mat(dmat, seedVec[i], rgThresh,
+					flrApartMsk, false);
+				resVec.push_back(msk);
+				//seedVec[i];
+			}
 		}
 
 		if (debugDraw)
@@ -1707,6 +1721,96 @@ namespace zc{
 
 		return newResVec;
 	}//trackingNoMove
+
+
+	vector<Mat> separateMasks(Mat dmat, vector<Mat> &inMaskVec, bool debugDraw /*= false*/){
+		vector<Mat> res;
+		size_t mskVecSz = inMaskVec.size();
+		//对每个 mask：
+		for (size_t i = 0; i < mskVecSz; i++){
+			Mat mski = inMaskVec[i];
+			vector<vector<Point>> contours;
+			findContours(mski.clone(), contours, RETR_EXTERNAL, CHAIN_APPROX_NONE);
+
+			size_t contsSz = contours.size();
+			//CV_Assert(contsSz >= 1);
+			if (contsSz == 0){
+				//错误！调试：
+				imshow("mski", mski);
+				waitKey(0);
+			}
+
+			if (contsSz == 1){
+				res.push_back(mski);
+				continue;
+			}
+			//else: //contsSz > 1
+			for (size_t i = 0; i < contsSz; i++){
+				Mat tmp = Mat::zeros(dmat.size(), CV_8UC1);
+				drawContours(tmp, contours, i, 255, -1);
+				tmp &= mski;
+
+				if (bboxIsHuman(dmat, tmp)){
+					bool isExist = false;
+					size_t resSz = res.size();
+					for (size_t k = 0; k < resSz; k++){
+						if (countNonZero(res[k] & tmp) != 0){
+							isExist = true;
+							break;
+						}
+					}
+					if (!isExist)
+						res.push_back(tmp);
+				}
+			}
+
+// 			vector<Rect> xzBboxVec;
+// 			for (size_t i = 0; i < contsSz; i++){
+// 				Rect bbox = contour2XZbbox(dmat, contours, i);
+// 				xzBboxVec.push_back(bbox);
+// 			}
+// 
+// 			size_t xzBboxVecSz = xzBboxVec.size();//其实 ==contsSz
+// 			for (size_t i = 0; i < xzBboxVecSz; i++){
+// 				for (size_t j = i; j < xzBboxVecSz; j++){
+// 					Rect intersectBbox = xzBboxVec[i] & xzBboxVec[j];
+// 					//若存在两XZ孤立区域，分离。暂时简单认为 i, j就是两个最大轮廓
+// 					if (intersectBbox.area() == 0){
+// 						//bboxIsHuman(dmat, )
+// 					}
+// 				}
+// 			}
+				
+		}//for (size_t i = 0; i < mskVecSz; i++)
+		
+		return res;
+	}//separateMasks
+
+
+	Rect contour2XZbbox(Mat dmat, vector<vector<Point>> &contours, int contIdx)
+	{
+		Mat contMsk = Mat::zeros(dmat.size(), CV_8UC1);
+		drawContours(contMsk, contours, contIdx, 255, -1);
+
+		double dmin, dmax;
+		minMaxLoc(dmat, &dmin, &dmax, nullptr, nullptr, contMsk);
+
+		const vector<Point> &conti = contours[contIdx];
+// 		size_t contSz = conti.size();
+// 		int xmin = dmat.cols + 1,
+// 			xmax = -1;
+// 		for (size_t i = 0; i < contSz; i++){
+// 			int ptx = conti[i].x;
+// 			if (ptx > xmax)
+// 				xmax = ptx;
+// 			if (ptx < xmin)
+// 				xmin = ptx;
+// 		}
+		Rect xyBbox = boundingRect(conti);
+		
+		return Rect(xyBbox.x, dmin, xyBbox.width, dmax - dmin);
+	}//contour2XZbbox
+
 
 #if CV_VERSION_MAJOR >= 3
 	cv::Mat seedUseBGS(Mat &dmat, bool isNewFrame /*= true*/, bool usePre /*= false*/, bool debugDraw /*= false*/){
@@ -1911,34 +2015,69 @@ namespace zc{
 		for (size_t i = 0; i < origMskSz; i++){
 			Mat mski = origMasks[i];
 
-			double dmin, dmax;
-			minMaxLoc(dmat, &dmin, &dmax, nullptr, nullptr, mski);
-			
-			vector<vector<Point> > contours;
-			findContours(mski.clone(), contours, RETR_EXTERNAL, CHAIN_APPROX_NONE);
-
-			CV_Assert(contours.size() > 0);
-			Rect bbox = boundingRect(contours[0]);
-
-			//类似 distMap2contours 的bbox 判定过滤：
-			//1. 不能太厚; 2. bbox高度不能太小; 3. bbox 下沿不能高于半屏，因为人脚部位置较低
-			bool notTooThick = dmax - dmin < 1500,
-				pxHeightEnough = bbox.height >80,
-				feetLowEnough = bbox.br().y > dmat.rows / 2;
-
-			cout << "notTooThick, pxHeightEnough, feetLowEnough: "
-				<< notTooThick << ", "
-				<< pxHeightEnough << ", "
-				<< feetLowEnough << endl;
+// 			double dmin, dmax;
+// 			minMaxLoc(dmat, &dmin, &dmax, nullptr, nullptr, mski);
+// 			
+// 			vector<vector<Point> > contours;
+// 			findContours(mski.clone(), contours, RETR_EXTERNAL, CHAIN_APPROX_NONE);
+// 
+// 			CV_Assert(contours.size() > 0);
+// 			Rect bbox = boundingRect(contours[0]);
+// 
+// 			//类似 distMap2contours 的bbox 判定过滤：
+// 			//1. 不能太厚; 2. bbox高度不能太小; 3. bbox 下沿不能高于半屏，因为人脚部位置较低
+// 			bool notTooThick = dmax - dmin < 1500,
+// 				pxHeightEnough = bbox.height >80,
+// 				feetLowEnough = bbox.br().y > dmat.rows / 2;
+// 
+// 			cout << "notTooThick, pxHeightEnough, feetLowEnough: "
+// 				<< notTooThick << ", "
+// 				<< pxHeightEnough << ", "
+// 				<< feetLowEnough << endl;
 				
 
-			if (notTooThick && pxHeightEnough&& feetLowEnough)
+			//if (notTooThick && pxHeightEnough&& feetLowEnough)
+			if (bboxIsHuman(dmat, mski))
 			{
 				res.push_back(mski);
 			}
 		}
 		return res;
 	}//bboxFilter
+
+	bool bboxIsHuman(Mat dmat, Mat mask){
+		double dmin, dmax;
+		minMaxLoc(dmat, &dmin, &dmax, nullptr, nullptr, mask);
+
+		vector<vector<Point> > contours;
+		findContours(mask.clone(), contours, RETR_EXTERNAL, CHAIN_APPROX_NONE);
+
+		CV_Assert(contours.size() > 0);
+// 		return bboxIsHuman(dmat, contours[0]);
+
+		Rect bbox = boundingRect(contours[0]);
+
+		//类似 distMap2contours 的bbox 判定过滤：
+		//1. 不能太厚; 2. bbox高度不能太小; 3. bbox 下沿不能高于半屏，因为人脚部位置较低
+		bool notTooThick = dmax - dmin < 1500,
+			pxHeightEnough = bbox.height >80,
+			feetLowEnough = bbox.br().y > dmat.rows / 2;
+
+		return notTooThick && pxHeightEnough && feetLowEnough;
+	}//bboxIsHuman
+
+// 	bool bboxIsHuman(Mat dmat, vector<Point> cont){
+// 		Rect bbox = boundingRect(cont);
+// 
+// 		//类似 distMap2contours 的bbox 判定过滤：
+// 		//1. 不能太厚; 2. bbox高度不能太小; 3. bbox 下沿不能高于半屏，因为人脚部位置较低
+// 		bool notTooThick = dmax - dmin < 1500,
+// 			pxHeightEnough = bbox.height >80,
+// 			feetLowEnough = bbox.br().y > dmat.rows / 2;
+// 
+// 		return notTooThick && pxHeightEnough && feetLowEnough;
+// 
+// 	}//bboxIsHuman
 
 	cv::Mat getMorphKrnl(int radius /*= 1*/, int shape /*= MORPH_RECT*/)
 	{

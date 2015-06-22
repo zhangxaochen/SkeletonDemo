@@ -154,6 +154,14 @@ namespace zc{
 
 	vector<Mat> trackingNoMove(Mat dmat, const vector<Mat> &prevFgMaskVec, const vector<Mat> &currFgMskVec, bool debugDraw = false);
 
+	//若某mask中包含多个孤立连通区域，则将其打散为多个mask
+	//e.g., 两人拉手时tracking成为一个mask，分离时mask也应打散；
+	//人靠近（握持）某物体时，增长为一个mask，分离时，应打散，并根据bbox etc. 判定是否跟踪“某物”
+	vector<Mat> separateMasks(Mat dmat, vector<Mat> &inMaskVec, bool debugDraw = false);
+
+	//返回 contours[contIdx] 对应的top-down-view 上的 XZ-bbox
+	Rect contour2XZbbox(Mat dmat, vector<vector<Point>> &contours, int contIdx);
+
 #if CV_VERSION_MAJOR >= 3
 	//尝试从findFgMasksUseBbox 剥离解耦
 	//用 MOG2 背景减除，得到前景点， erode 得到比较大的前景区域
@@ -398,8 +406,12 @@ namespace zc{
 
 	};//class HumanFg
 
-	//vector<Mat> bboxFilter(const vector<Mat> &origMasks);
+	//假定origMasks里没有全黑mat，否则出错！
 	vector<Mat> bboxFilter(Mat dmat, const vector<Mat> &origMasks);
+
+	//假定 mask 不是全黑，否则出错！假定 mask中有唯一一个连通区域
+	bool bboxIsHuman(Mat dmat, Mat mask);
+// 	bool bboxIsHuman(Mat dmat, vector<Point> cont);
 
 	//radius: kernel size is (2*radius+1)^2
 	//shape: default MORPH_RECT
