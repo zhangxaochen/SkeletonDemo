@@ -34,39 +34,93 @@ namespace zc{
 
 	Point seedSimple(Mat dmat, int *outVeryDepth = 0, bool debugDraw = false);
 
+	//尝试从 findFgMasksUseBbox 剥离解耦, √
+	//用正视图、俯视图两种 bbox 求交，判定人体轮廓位置
+	//注：
+	// 1. 若 debugDraw = true, 则 _debug_mat 必须传实参
+	// 2. 返回值 vector<vector<Point>> 实际就是挑选过的 contours
 	vector<vector<Point>> seedUseBbox(Mat dmat, bool debugDraw = false, OutputArray _debug_mat = noArray());
 
 	//1. 找背景大墙面；
 	//2. 若没墙，说明背景空旷，物理高度判定剔除(<2500mm)
 	//3. 剩余最高点做种子点
-	vector<Mat> findFgMasksUseWallAndHeight(Mat dmat, bool debugDraw = false);
+	vector<Mat> findFgMasksUseWallAndHeight(Mat dmat, /*bool usePre = false, */bool debugDraw = false);
+
+	//根据高度or大平面增长出背景：
+	Mat getBgMskUseWallAndHeight(Mat dmat);
+	Mat fetchBgMskUseWallAndHeight(Mat dmat);
 
 
 	//Mat simpleRegionGrow(const Mat &dmat, Point seed, int thresh, bool debugDraw = false);
+
+	//Point seed, Rect roi
 	Mat _simpleRegionGrow(const Mat &dmat, Point seed, int thresh, const Rect roi, bool debugDraw = false);
+
+	//vector<Point> seeds, Rect roi
 	Mat _simpleRegionGrow(const Mat &dmat, vector<Point> seeds, int thresh, const Rect roi, bool debugDraw = false);
 
-	Mat _simpleRegionGrow(const Mat &dmat, Point seed, int thresh, const Mat &mask, bool debugDraw = false);
-	Mat _simpleRegionGrow(const Mat &dmat, vector<Point> seeds, int thresh, const Mat &mask, bool debugDraw = false);
-	vector<Mat> simpleRegionGrow(const Mat &dmat, vector<Point> seeds, int thresh, const Mat &mask, bool getMultiMasks = false, bool debugDraw = false);
+	//mask 为是否有效增长 flag， 若某像素黑(0), 则此处终止，去看别处
+	Mat _simpleRegionGrow_core_pt2mat(const Mat &dmat, Point seed, int thresh, const Mat &validMask, bool debugDraw = false);
 
+	//_simpleRegionGrow 核心函数：
+	Mat _simpleRegionGrow_core_mat2mat(const Mat &dmat, Mat sdsMat, int thresh, const Mat &validMask, bool debugDraw = false);
+	Mat _simpleRegionGrow_core_vec2mat(const Mat &dmat, vector<Point> sdsVec, int thresh, const Mat &validMask, bool debugDraw = false);
 
-	//三个默认参数(flrKrnl, mskThresh, morphRadius) 版 
+	//先 seedsMask -> vector<Point> seeds，再调用重载
+	Mat _simpleRegionGrow(const Mat &dmat, Mat seedsMask, int thresh, const Mat &mask, bool debugDraw = false);
+
+	//N个种子点， 
+	//1. getMultiMasks = false, 尽可能增长为多个mask
+	//2. getMultiMasks = true, 增长为一个mask, 不管是否连成片，存在位置[0]。
+	vector<Mat> simpleRegionGrow(const Mat &dmat, vector<Point> seedsVec, int thresh, const Mat &mask, bool getMultiMasks = false, bool debugDraw = false);
+
+	//先 sdsMat -> vector<Point> seeds, 再调用重载
+	vector<Mat> simpleRegionGrow(const Mat &dmat, Mat sdsMat, int thresh, const Mat &mask, bool getMultiMasks = false, bool debugDraw = false);
+
+	//N个种子点vector， 增长为N个mask
+	vector<Mat> simpleRegionGrow(const Mat &dmat, vector<vector<Point>> seedsVecOfVec, int thresh, const Mat &mask, bool debugDraw = false);
+
+	//N个种子点mask， 增长为N个mask
+	vector<Mat> simpleRegionGrow(const Mat &dmat, vector<Mat> sdMats, int thresh, const Mat &mask, bool debugDraw = false);
+	
+	//---------------@deprecated, 错误思路，不该有特定经验性限制！
+// 	vector<Mat> simpleRegionGrow(Mat dmat, Mat seedsMask, int thresh, Mat mask);
+
+	//返回一个 mask-mat; type: 8uc1, 用白色 UCHAR_MAX 点表示有效点
+	Mat pts2maskMat(const vector<Point> pts, Size matSz);
+
+	//maskMat: type 8uc1, 白色 UCHAR_MAX 点表示有效点
+	vector<Point> maskMat2pts(Mat maskMat, int step = 1);
+
+	//三个默认参数(flrKrnl, mskThresh, morphRadius) 版：
+	//flrKrnl = { 1, 1, 1, -1, -1, -1 };
+	//mskThresh = 100;
+	//morphRadius = 3;
 	Mat getFloorApartMask(Mat dmat, bool debugDraw = false);
 	//返回：用于去除地板的mask
 	Mat getFloorApartMask(Mat dmat, Mat flrKrnl, int mskThresh, int morphRadius, bool debugDraw = false);
 
 	Mat fetchFloorApartMask(Mat dmat, bool debugDraw = false);
 
+	//计算物理尺度宽度X-mat
+	//centerX： 中心点x坐标，默认值0，即mat左边缘
+	Mat calcWidthMap(Mat dmat, int centerX = 0, bool debugDraw = false);
+	Mat fetchWidthMap(Mat dmat, int centerX = 0, bool debugDraw = false);
+
+	//计算物理尺度高度Mat：
+	//以mat下边缘为0高度，越往上越高
 	Mat calcHeightMap(Mat dmat, bool debugDraw = false);
+	//与 calcHeightMap 区别在于： 不是每次算， 只有 dmat 内容变了，才更新
 	Mat fetchHeightMap(Mat dmat, bool debugDraw = false);
 
+	//截取物理尺度高度<limitMs(毫米)像素点做mask
 	Mat getHeightMask(Mat dmat, int limitMs = 2500);
 
 	//直方图方式寻找大墙面深度值（大峰值）
 	//适用于正对墙面的用例
 	//RETURN: -1 表示没找到足够大的墙面；正值为墙面深度值
 	int getWallDepth(Mat &dmat);
+	int fetchWallDepth(Mat &dmat);
 
 	void drawOneSkeleton(Mat &img, CapgSkeleton &sk);
 	void drawSkeletons(Mat &img, const vector<CapgSkeleton> &sklts, int skltIdx);
@@ -96,14 +150,36 @@ namespace zc{
 	//用正视图、俯视图两种 bbox 求交，判定人体轮廓位置
 	//注：
 	// 1. 若 debugDraw = true, 则 _debug_mat 必须传实参
-	vector<Mat> findFgMasksUseBbox(Mat &dmat, bool debugDraw = false, OutputArray _debug_mat = noArray());
+	vector<Mat> findFgMasksUseBbox(Mat &dmat, /*bool usePre = false, */bool debugDraw = false, OutputArray _debug_mat = noArray());
+
+	vector<Mat> trackingNoMove(Mat dmat, const vector<Mat> &prevFgMaskVec, const vector<Mat> &currFgMskVec, bool debugDraw = false);
+
+	//若某mask中包含多个孤立连通区域，则将其打散为多个mask
+	//e.g., 两人拉手时tracking成为一个mask，分离时mask也应打散；
+	//人靠近（握持）某物体时，增长为一个mask，分离时，应打散，并根据bbox etc. 判定是否跟踪“某物”
+	vector<Mat> separateMasks(Mat dmat, vector<Mat> &inMaskVec, bool debugDraw = false);
+
+	//返回 contours[contIdx] 对应的top-down-view 上的 XZ-bbox
+	Rect contour2XZbbox(Mat dmat, vector<vector<Point>> &contours, int contIdx);
 
 #if CV_VERSION_MAJOR >= 3
+	//尝试从findFgMasksUseBbox 剥离解耦
+	//用 MOG2 背景减除，得到前景点， erode 得到比较大的前景区域
+	//注：
+	//1. 用到时序信息(history)！一次循环中尽量避免多次调用；如必须，置位 isNewFrame = false
+	Mat seedUseBGS(Mat &dmat, bool isNewFrame = true, bool usePre = false, bool debugDraw = false);
+
 	//用 opencv300 background-subtraction 方法提取运动物体（不必是人,e.g.:转椅）轮廓
 	//1. bgs -> roi; 2. region-grow -> vector<Mat>; 3. bbox etc. 判定; 4. usePre 时序上，重心判定
 	//
 	vector<Mat> findFgMasksUseBGS(Mat &dmat, bool usePre = false, bool debugDraw = false, OutputArray _debug_mat = noArray());
 #endif
+
+	//在前一帧找到的前景mask范围内，前后帧深度值变化不大(diff < thresh)的像素点，作为新候选点。
+	//返回新候选点mask
+	Mat seedNoMove(Mat dmat, /*Mat prevDmat, */Mat mask, int thresh = 50);
+	vector<Mat> seedNoMove(Mat dmat, /*Mat prevDmat, */vector<Mat> masks, int thresh = 50);
+
 
 	//返回不同灰度标记前景的mat
 	Mat getHumansMask(vector<Mat> masks, Size sz);
@@ -117,7 +193,7 @@ namespace zc{
 	//应有粘性跟踪能力，多人场景下，uid不应突变
 	//跟踪(更新)策略为：
 	//1. _prevCenter位置前后帧深度变化较小
-	vector<HumanFg> getHumanObjVec(Mat &dmat, vector<Mat> fgMasks);
+	void getHumanObjVec(Mat &dmat, vector<Mat> fgMasks, vector<HumanFg> &outHumVec);
 
 	class HumanFg
 	{
@@ -211,50 +287,52 @@ namespace zc{
 
 			//若因 fgMasks_重叠度太低未找到，则：
 			if (!foundNewMask){
-				//取： mask & 新一帧非零区域
-				Mat tmp_msk = _currMask & (dmat != 0);
-				//以及新旧帧微小变化求交：
-				tmp_msk &= (abs(dmat - _dmat) < 100);
-				//作为新的增长候选区域：
-				bool debugDraw_ = false;
-				Mat flrApartMsk = fetchFloorApartMask(dmat, debugDraw_);
-				int rgThresh = 550;
-
-				Mat sdPts;
-				cv::findNonZero(tmp_msk, sdPts);
-				if (sdPts.empty()){
-					cout << "sdPts.empty()" << endl;
-					//return false;
-				}
-				else{
-					Mat newMask = _simpleRegionGrow(dmat, sdPts.at<Point>(0), rgThresh, flrApartMsk, debugDraw_);
-
-					setCurrMask(newMask);
-				}
+				return false;
+				//不在这里增长! trackingNoMove... 已经处理过了！
+// 				//取： mask & 新一帧非零区域
+// 				Mat tmp_msk = _currMask & (dmat != 0);
+// 				//以及新旧帧微小变化求交：
+// 				tmp_msk &= (abs(dmat - _dmat) < 100);
+// 				//作为新的增长候选区域：
+// 				bool debugDraw_ = false;
+// 				Mat flrApartMsk = fetchFloorApartMask(dmat, debugDraw_);
+// 				int rgThresh = 550;
+// 
+// 				Mat sdPts;
+// 				cv::findNonZero(tmp_msk, sdPts);
+// 				if (sdPts.empty()){
+// 					cout << "sdPts.empty()" << endl;
+// 					//return false;
+// 				}
+// 				else{
+// 					Mat newMask = _simpleRegionGrow(dmat, sdPts.at<Point>(0), rgThresh, flrApartMsk, debugDraw_);
+// 
+// 					setCurrMask(newMask);
+// 				}
 			}
 			//深度图更新：
 			_dmat = dmat;
 
 
-			//类似 distMap2contours 的bbox 判定过滤：
-			//1. 不能太厚！
-			double dmin, dmax;
-			minMaxLoc(dmat, &dmin, &dmax, nullptr, nullptr, _currMask);
-			if (dmax - dmin > 1500)
-				return false;
-
-			vector<vector<Point> > contours;
-			findContours(_currMask.clone(), contours, RETR_EXTERNAL, CHAIN_APPROX_NONE);
-
-			//CV_Assert(contours.size() > 0); //有些时候就是找不到，【未解决，fake】
-			//fake:
-			contours.push_back(vector<Point>());
-
-			Rect bbox = boundingRect(contours[0]);
-			//2. bbox高度不能太小; 3. bbox 下沿不能高于半屏，因为人脚部位置较低
-			if (bbox.height < 80
-				|| bbox.br().y < dmat.rows / 2)
-				return false;
+// 			//类似 distMap2contours 的bbox 判定过滤：
+// 			//1. 不能太厚！
+// 			double dmin, dmax;
+// 			minMaxLoc(dmat, &dmin, &dmax, nullptr, nullptr, _currMask);
+// 			if (dmax - dmin > 1500)
+// 				return false;
+// 
+// 			vector<vector<Point> > contours;
+// 			findContours(_currMask.clone(), contours, RETR_EXTERNAL, CHAIN_APPROX_NONE);
+// 
+// 			//CV_Assert(contours.size() > 0); //有些时候就是找不到，【未解决，fake】
+// 			//fake:
+// 			contours.push_back(vector<Point>());
+// 
+// 			Rect bbox = boundingRect(contours[0]);
+// 			//2. bbox高度不能太小; 3. bbox 下沿不能高于半屏，因为人脚部位置较低
+// 			if (bbox.height < 80
+// 				|| bbox.br().y < dmat.rows / 2)
+// 				return false;
 
 
 			return true;
@@ -328,12 +406,22 @@ namespace zc{
 
 	};//class HumanFg
 
-	//vector<Mat> bboxFilter(const vector<Mat> &origMasks);
+	//假定origMasks里没有全黑mat，否则出错！
 	vector<Mat> bboxFilter(Mat dmat, const vector<Mat> &origMasks);
+
+	//假定 mask 不是全黑，否则出错！假定 mask中有唯一一个连通区域
+	bool bboxIsHuman(Mat dmat, Mat mask);
+// 	bool bboxIsHuman(Mat dmat, vector<Point> cont);
 
 	//radius: kernel size is (2*radius+1)^2
 	//shape: default MORPH_RECT
 	Mat getMorphKrnl(int radius = 1, int shape = MORPH_RECT);//getMorphKrnl
+
+	//缓存上一帧深度数据，以便某些需要时序信息的算法使用
+	//主线程中一次循环更新一次：
+	void setPrevDmat(Mat currDmat);
+	void initPrevDmat(Mat currDmat);
+	Mat getPrevDmat();
 
 	//region-grow 后处理： 
 	// 1. 找不到种子点，进而增长失败的情况； 
