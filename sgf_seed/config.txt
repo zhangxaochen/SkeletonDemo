@@ -8,3 +8,5 @@ sgf-zc-sit-no-front-desk-wall.oni
 2.25 50
 2 0
 2000 100 50 2
+1600
+0.4

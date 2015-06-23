@@ -167,7 +167,7 @@ Mat segment::get_result()
 {
 	return interest_point2.clone();
 }
-vector<Point> segment::seedSGF(Mat dmat,bool showResult,Mat& depth_without_bg)
+vector<Point> segment::seedSGF(Mat dmat,bool showResult,bool seed_raw,Mat& depth_without_bg)
 {
 	set_depthMap(dmat);
 	//fill_holes();
@@ -181,6 +181,10 @@ vector<Point> segment::seedSGF(Mat dmat,bool showResult,Mat& depth_without_bg)
 	seperate_foot_and_ground();
 
 	sjbh();
+// 	imshow("depth mask",depth_mask);
+// 	waitKey(1);
+	compute_cost();
+
 
 	if (showResult)
 	{
@@ -193,11 +197,16 @@ vector<Point> segment::seedSGF(Mat dmat,bool showResult,Mat& depth_without_bg)
 		imshow("top down view binary",sjbh_binary);
 		waitKey(1);
 	}
-// 	imshow("depth mask",depth_mask);
-// 	waitKey(1);
 
 	depth_without_bg=depth_mask.clone();
-	return get_seed();
+	if (!seed_raw)
+	{
+		return get_seed();
+	}
+	else
+	{
+		return get_seed_raw();
+	}
 // 	show_difference();
 // 
 // 	double my_max=0;
@@ -344,7 +353,8 @@ bool segment::read_config(const std::string &configPath)
 			>>threshold_contour_ckb>>threshold_headsize_min>>threshold_headsize_max
 			>>a>>const_depth
 			>>distance_type>>mask_type
-			>>height>>bar_width>>depth_rate1>>depth_rate2;
+			>>height>>bar_width>>depth_rate1>>depth_rate2
+			>>height_center>>cost_threshold;
 
 		config_file.close();
 	}
@@ -508,9 +518,9 @@ void segment::seperate_foot_and_ground()
 	minMaxLoc(filter_map,&dmin,&dmax);
 	//imshow("filter map",filter_map);
 	filter_map.convertTo(filter_map,CV_8U);
-//	imshow("filter map1",filter_map);
+	imshow("filter map1",filter_map);
 
-//	waitKey(1);
+	waitKey(1);
 
 // 	for ( int i = 1; i < 4; i = i + 2 )
 // 	{
@@ -534,8 +544,8 @@ void segment::seperate_foot_and_ground()
 		Point( dilate_size, dilate_size ) );
 	erode( filter_map, filter_map,element);
 	dilate( filter_map, filter_map,element1);
-//  	imshow("filter map binary",filter_map);
-//  	waitKey(1);
+ 	imshow("filter map binary",filter_map);
+ 	waitKey(1);
 }
 void segment::compute_hist()
 {
@@ -881,7 +891,6 @@ void segment::sjbh()
 						Point2i p;
 						p.x=x;p.y=y;
 						headpoints_location.push_back(p);
-						circle(gray_clone,p,10,0,5);
 						break;
 					}
 				}
@@ -982,6 +991,7 @@ void segment::compute_height()
 	double height_min,height_max;
 	minMaxLoc(height_map,&height_min,&height_max);
 /*	cout<<"height min: "<<height_min<<endl<<"height max: "<<height_max<<endl;*/
+	height_absolute=height_max-height_min;
 
 	double abs_height=2000;
 	for (int i=0;i<depth_map.cols;++i)
@@ -993,6 +1003,7 @@ void segment::compute_height()
 			{
 				depth_mask.at<uchar>(j,i)=255;
 			}
+			height_map.at<float>(j,i)=height_max-height;
 		}
 	}
 	
@@ -1011,7 +1022,82 @@ void segment::compute_height()
 // 	waitKey(1);
 }
 
-vector<Point2i> segment::get_seed()
+void segment::compute_cost()
+{
+	/*
+	三个方面考虑每一个候选的种子点的正确性
+	1、高度信息，高度不能太高也不能太低
+	2、深度信息，尽量在屏幕中比较靠前的位置
+	3、左右信息，比较靠近屏幕的中心
+	*/
+	points_cost.clear();
+
+	//计算处理后的深度图的深度均值
+	double depth_avg=0;int depth_num=0;
+	double d_min=8000,d_max=0;
+	for (int i=0;i<depth_map.rows;++i)
+	{
+		for (int j=0;j<depth_map.cols;++j)
+		{
+			double d=depth_map.at<float>(i,j);
+			if (d>0)
+			{
+				d_min=min(d,d_min);
+			}
+			d_max=max(d,d_max);
+			int flag1=filter_map.at<uchar>(i,j);
+			int flag2=depth_mask.at<uchar>(i,j);
+			if (flag1==0&&flag2!=0)
+			{
+				depth_avg+=d;
+				++depth_num;
+			}
+		}
+	}
+	depth_avg/=depth_num;
+	//depth_avg-=500;
+
+	headpoints_location_1.clear();
+	//计算每一个点对应的cost
+
+	int num=0;
+	for (int i=0;i<headpoints_location.size();++i)
+	{
+		double cost=0;
+		Point p=headpoints_location[i];
+		
+		//深度惩罚项
+		double depth=depth_map.at<float>(p.y,p.x);
+		cost+=abs(depth-depth_avg)/(d_max-d_min);
+
+		//高度惩罚项
+		double height=height_map.at<float>(p.y,p.x);
+		cost+=abs(height-height_center)/height_absolute;
+
+		//左右惩罚项
+		cost+=abs(p.x-depth_map.cols/2)*1.0/depth_map.cols;
+
+		points_cost.push_back(cost);
+/*		cout<<"points cost: "<<cost<<endl;*/
+
+		circle(gray_clone,p,10,0,10);
+
+		if (cost<cost_threshold)
+		{
+			headpoints_location_1.push_back(p);
+			circle(gray_clone,p,5,255,5);
+			++num;
+		}
+	}
+
+
+}
+
+vector<Point2i> segment::get_seed_raw()
 {
 	return headpoints_location;
+}
+vector<Point2i> segment::get_seed()
+{
+	return headpoints_location_1;
 }
