@@ -22,6 +22,10 @@ const int QVGA_WIDTH = 320,
 
 static cv::RNG rng;
 
+extern const int thickLimitDefault;// = 1500;
+extern int thickLimit;// = thickLimitDefault; //毫米
+
+
 namespace zc{
 #if CV_VERSION_MAJOR < 3
 //lincccc's code below:
@@ -41,6 +45,7 @@ namespace zc{
 	// 2. 返回值 vector<vector<Point>> 实际就是挑选过的 contours
 	vector<vector<Point>> seedUseBbox(Mat dmat, bool debugDraw = false, OutputArray _debug_mat = noArray());
 
+	//@deprecated, 语义不明，弃用；其实包含两步：去背景 & findFgMasksUseBbox
 	//1. 找背景大墙面；
 	//2. 若没墙，说明背景空旷，物理高度判定剔除(<2500mm)
 	//3. 剩余最高点做种子点
@@ -107,9 +112,11 @@ namespace zc{
 	Mat calcWidthMap(Mat dmat, int centerX = 0, bool debugDraw = false);
 	Mat fetchWidthMap(Mat dmat, int centerX = 0, bool debugDraw = false);
 
+	cv::Mat calcHeightMap0(Mat dmat, bool debugDraw = false);
+
 	//计算物理尺度高度Mat：
 	//以mat下边缘为0高度，越往上越高
-	Mat calcHeightMap(Mat dmat, bool debugDraw = false);
+	Mat calcHeightMap1(Mat dmat, bool debugDraw = false);
 	//与 calcHeightMap 区别在于： 不是每次算， 只有 dmat 内容变了，才更新
 	Mat fetchHeightMap(Mat dmat, bool debugDraw = false);
 
@@ -145,7 +152,13 @@ namespace zc{
 	// 1. Z轴缩放比为定值： UCHAR_MAX/MAX_VALID_DEPTH, 即 top-down-view 图高度为 256
 	// 2. debugDraw, dummy variable
 	// 3. 若 debugDraw = true, 则 _debug_mat 必须传实参
-	vector<vector<Point> > dmat2TopDownView(const Mat &dmat, bool debugDraw = false, OutputArray _debug_mat = noArray());
+	vector<vector<Point> > dmat2TopDownView(const Mat &dmat, double ratio = 1. * UCHAR_MAX / MAX_VALID_DEPTH, bool debugDraw = false, OutputArray _debug_mat = noArray());
+
+	//【注】
+	//1. 返回mat.type==ushort
+	//2. 内部最后有row0填充零操作，防止无效区域干扰
+	//3. squash用了 convertTo，float值round，非floor；所以反投影小心
+	Mat dmat2tdview_core(const Mat &dmat, double ratio = 1. * UCHAR_MAX / MAX_VALID_DEPTH, bool debugDraw = false);
 
 	//用正视图、俯视图两种 bbox 求交，判定人体轮廓位置
 	//注：
@@ -155,9 +168,13 @@ namespace zc{
 	vector<Mat> trackingNoMove(Mat dmat, const vector<Mat> &prevFgMaskVec, const vector<Mat> &currFgMskVec, bool debugDraw = false);
 
 	//若某mask中包含多个孤立连通区域，则将其打散为多个mask
-	//e.g., 两人拉手时tracking成为一个mask，分离时mask也应打散；
+	//e.g., 两人拉手时tracking成为一个mask，【XY视图】分离时mask也应打散；
 	//人靠近（握持）某物体时，增长为一个mask，分离时，应打散，并根据bbox etc. 判定是否跟踪“某物”
-	vector<Mat> separateMasks(Mat dmat, vector<Mat> &inMaskVec, bool debugDraw = false);
+	vector<Mat> separateMasksXYview(Mat dmat, vector<Mat> &inMaskVec, bool debugDraw = false);
+
+	//类似separateMasksXYview，但变换视角为【XZ视图】
+	vector<Mat> separateMasksXZview(Mat dmat, vector<Mat> &inMaskVec, bool debugDraw = false);
+
 
 	//返回 contours[contIdx] 对应的top-down-view 上的 XZ-bbox
 	Rect contour2XZbbox(Mat dmat, vector<vector<Point>> &contours, int contIdx);
@@ -177,9 +194,14 @@ namespace zc{
 
 	//在前一帧找到的前景mask范围内，前后帧深度值变化不大(diff < thresh)的像素点，作为新候选点。
 	//返回新候选点mask
-	Mat seedNoMove(Mat dmat, /*Mat prevDmat, */Mat mask, int thresh = 50);
-	vector<Mat> seedNoMove(Mat dmat, /*Mat prevDmat, */vector<Mat> masks, int thresh = 50);
+	Mat seedNoMove(Mat dmat, Mat mask, int thresh = 50);
+	vector<Mat> seedNoMove(Mat dmat, vector<Mat> masks, int thresh = 50);
 
+	//@Overload
+	vector<Point> seedNoMove(Mat dmat, vector<Point> sdVec, int thresh = 50);
+
+	vector<vector<Point>> seedNoMove(Mat dmat, vector<vector<Point>> sdVov, int thresh = 50);
+		
 
 	//返回不同灰度标记前景的mat
 	Mat getHumansMask(vector<Mat> masks, Size sz);
@@ -213,6 +235,7 @@ namespace zc{
 
 			for (int i = 0; i < 3; i++)
 				_humColor[i] = rng.uniform(UCHAR_MAX/2, UCHAR_MAX);
+			_humColor[3] = 100;
 		}//HumanFg-ctor
 
 // 		void updateMask(Mat currMask_){
@@ -240,10 +263,19 @@ namespace zc{
 				int intersectArea = countNonZero(currNewIntersect != 0),
 					fgMskArea = countNonZero(fgMsk != 0);
 				double percent = 0.5;
+
+				//2015年6月27日22:10:18
+				
 				if (mskUsedFlags[i] == false
+					//质心不可靠
 					//&& fgMsk.at<uchar>(_currCenter) == UCHAR_MAX){
-					&& (intersectArea > _currMaskArea * percent 
-						|| intersectArea > fgMskArea * percent)
+					//mask交集占比，也不可靠
+					//&& (intersectArea > _currMaskArea * percent 
+					//	|| intersectArea > fgMskArea * percent)
+
+					//2015年6月27日22:08:20， mask交集区域深度差均值
+					//【注】：intersectArea>0必要，否则 mean=0导致误判
+					&& intersectArea > 0 && mean(abs(_dmat - dmat), currNewIntersect)[0] < 55
 					){
 
 // 					_prevMask = _currMask;
