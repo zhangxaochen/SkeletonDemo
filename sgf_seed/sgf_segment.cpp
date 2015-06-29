@@ -170,43 +170,44 @@ Mat segment::get_result()
 vector<Point> segment::seedSGF(Mat dmat,bool showResult,bool seed_raw,Mat& depth_without_bg)
 {
 	set_depthMap(dmat);
+	
 	//fill_holes();
 
-	compute_hist();
-
-	compute_height();
-
-	smooth_image();
-
-	seperate_foot_and_ground();
-
-	sjbh();
-// 	imshow("depth mask",depth_mask);
-// 	waitKey(1);
-	compute_cost();
-
-
-	if (showResult)
-	{
-		imshow("result",gray_clone);
-		waitKey(1);
-		imshow("depth without bg mask",depth_mask);
-		waitKey(1);
-		imshow("top down view",depth_sjbh);
-		waitKey(1);
-		imshow("top down view binary",sjbh_binary);
-		waitKey(1);
-	}
-
-	depth_without_bg=depth_mask.clone();
-	if (!seed_raw)
-	{
-		return get_seed();
-	}
-	else
-	{
-		return get_seed_raw();
-	}
+// 	compute_hist();
+// 
+// 	compute_height();
+// 
+// 	smooth_image();
+// 
+// 	seperate_foot_and_ground();
+// 
+// 	sjbh();
+// // 	imshow("depth mask",depth_mask);
+// // 	waitKey(1);
+// 	compute_cost();
+// 
+// 
+// 	if (showResult)
+// 	{
+// 		imshow("result",gray_clone);
+// 		waitKey(1);
+// 		imshow("depth without bg mask",depth_mask);
+// 		waitKey(1);
+// 		imshow("top down view",depth_sjbh);
+// 		waitKey(1);
+// 		imshow("top down view binary",sjbh_binary);
+// 		waitKey(1);
+// 	}
+// 
+// 	depth_without_bg=depth_mask.clone();
+// 	if (!seed_raw)
+// 	{
+// 		return get_seed();
+// 	}
+// 	else
+// 	{
+// 		return get_seed_raw();
+// 	}
 // 	show_difference();
 // 
 // 	double my_max=0;
@@ -237,19 +238,26 @@ vector<Point> segment::seedSGF(Mat dmat,bool showResult,bool seed_raw,Mat& depth
 // 	//imwrite("depth_"+name+".jpeg",gray_map);
 // 
 // 	waitKey(1);
-// 	compute_filter_map_edge(threshold_filter_min,threshold_filter_max);
+
+
+	int begin=clock();
+	smooth_image();
+
+	seperate_foot_and_ground();
+ 	compute_filter_map_edge(threshold_filter_min,threshold_filter_max);
 // // 	imshow("seperate foot and ground",filter_map);
 // // 	waitKey(1);
 // 
-// 	compute_edge(threshold_depth_min,threshold_depth_max);
+ 	compute_edge(threshold_depth_min,threshold_depth_max);
 // // 	imshow("depth edge",edge_map_thresh);
 // // 	waitKey(1);
-// 	//edge_map_thresh=edge_map_thresh+filter_edge;
+ 	edge_map_thresh=edge_map_thresh+filter_edge;
 // 	imshow("edge",edge_map_thresh);
 // 	waitKey(1);
-// 	threshold(edge_map_thresh,edge_map_thresh,128,255,THRESH_BINARY_INV);
-// 
-// 	compute_distanceMap_2D();
+	threshold(edge_map_thresh,edge_map_thresh,128,255,THRESH_BINARY_INV);
+
+	cout<<"canny and seperate foot time cost:"<<clock()-begin<<endl;
+	compute_distanceMap_2D();
 // 	imshow("distance 1",distance_map_uchar);
 // 
 // 
@@ -267,35 +275,38 @@ vector<Point> segment::seedSGF(Mat dmat,bool showResult,bool seed_raw,Mat& depth
 // 	imshow("distance 2",distance_map_lut);
 // 	waitKey(1);
 // 
-// 	equalizeHist(distance_map_uchar,distance_map_uchar);
+ 	equalizeHist(distance_map_uchar,distance_map_uchar);
 // 	imshow("distance 3",distance_map_uchar);
 // 	waitKey(1);
 // 
 // 
-// 	compute_subsamples();
-// 
-// 	compute_response();
-// 
-// 	region_of_interest.clear();
-// 	region_of_interest_raw.clear();
-// 	interest_point=edge_map_thresh.clone();
-// 	interest_point_raw=edge_map_thresh.clone();
-// 	interest_point1=edge_map_thresh.clone();
-// 	interest_point2=edge_map_thresh.clone();
-// 	interest_point3=edge_map_thresh.clone();
-// 	interest_point4=edge_map_thresh.clone();
-// 	find_and_draw_countours();
-// 	choose_and_draw_interest_region();
-// 
-// 	region_grow_map=Mat::zeros(distance_map.rows,distance_map.cols,CV_8U);
-// 	mask_of_distance=Mat::zeros(distance_map.rows,distance_map.cols,CV_8U);
-// 	for (int i=0;i<region_of_interest.size();++i)
-// 	{
-// 		stack_list.clear();
-// 		/*region_grow(region_of_interest[i].y,region_of_interest[i].x,1);*/
-// 	}
-// 
-// 	display();
+	compute_subsamples();
+
+	compute_response();
+
+	region_of_interest.clear();
+	region_of_interest_raw.clear();
+	interest_point=edge_map_thresh.clone();
+	interest_point_raw=edge_map_thresh.clone();
+	interest_point1=edge_map_thresh.clone();
+	interest_point2=edge_map_thresh.clone();
+	interest_point3=edge_map_thresh.clone();
+	interest_point4=edge_map_thresh.clone();
+	find_and_draw_countours();
+	choose_and_draw_interest_region();
+
+	region_grow_map=Mat::zeros(distance_map.rows,distance_map.cols,CV_8U);
+	mask_of_distance=Mat::zeros(distance_map.rows,distance_map.cols,CV_8U);
+	for (int i=0;i<region_of_interest.size();++i)
+	{
+		stack_list.clear();
+		/*region_grow(region_of_interest[i].y,region_of_interest[i].x,1);*/
+	}
+	cout<<"time spend:"<<clock()-begin<<endl;
+
+	display();
+	vector<Point> res;
+	return res;
 }
 void segment::output(string name)
 {
@@ -756,8 +767,8 @@ void segment::choose_and_draw_interest_region()
 }
 void segment::display()
 {
-	if (show_result)
-	{	
+// 	if (show_result)
+// 	{	
 // 		imshow("result",interest_point);
 // 		waitKey(1);
 		imshow("result of raw headpoints",interest_point_raw);
@@ -771,46 +782,46 @@ void segment::display()
 		waitKey(1);
 		imshow("result with thresh ckb and headsize",interest_point3);
 		waitKey(1);
-	}
-	if (do_region_grow)
-	{
-		imshow("region grow",region_grow_map);
-		waitKey(1);
-	}
-	if (show_edge)
-	{
-		imshow("edges from Canny",edge_map_thresh);
-		waitKey(1);
-	}
-	if (show_distance_map)
-	{
-		imshow("distance map",sub_distance_maps[0]);
-		waitKey(1);
-	}
-	if (show_responses)
-	{
-		for (int i=0;i<sub_responses.size();++i)
-		{
-			imshow("response"+string('0'+i,1),sub_responses[i]);
-			waitKey(1);
-		}
-	}
-	if (show_histogram)
-	{
-		int histSize=10;
-		int hist_w = 900; int hist_h = 500;
-		int bin_w = cvRound( (double) hist_w/histSize );
-		Mat histImage=Mat::zeros( hist_h, hist_w, CV_8U);
-		normalize(histogram_image, histogram_image, 0, histImage.rows, NORM_MINMAX, -1, Mat() );
-		for( int i = 1; i < histSize; i++ )
-		{
-			line( histImage, Point( bin_w*(i-1), hist_h - cvRound(histogram_image.at<float>(i-1,0)) ) ,
-				Point( bin_w*(i), hist_h - cvRound(histogram_image.at<float>(i,0)) ),
-				255, 2, 8, 0  );
-		}
-		imshow("histogram", histImage );
-		waitKey(1);
-	}
+//	}
+// 	if (do_region_grow)
+// 	{
+// 		imshow("region grow",region_grow_map);
+// 		waitKey(1);
+// 	}
+// 	if (show_edge)
+// 	{
+// 		imshow("edges from Canny",edge_map_thresh);
+// 		waitKey(1);
+// 	}
+// 	if (show_distance_map)
+// 	{
+// 		imshow("distance map",sub_distance_maps[0]);
+// 		waitKey(1);
+// 	}
+// 	if (show_responses)
+// 	{
+// 		for (int i=0;i<sub_responses.size();++i)
+// 		{
+// 			imshow("response"+string('0'+i,1),sub_responses[i]);
+// 			waitKey(1);
+// 		}
+// 	}
+// 	if (show_histogram)
+// 	{
+// 		int histSize=10;
+// 		int hist_w = 900; int hist_h = 500;
+// 		int bin_w = cvRound( (double) hist_w/histSize );
+// 		Mat histImage=Mat::zeros( hist_h, hist_w, CV_8U);
+// 		normalize(histogram_image, histogram_image, 0, histImage.rows, NORM_MINMAX, -1, Mat() );
+// 		for( int i = 1; i < histSize; i++ )
+// 		{
+// 			line( histImage, Point( bin_w*(i-1), hist_h - cvRound(histogram_image.at<float>(i-1,0)) ) ,
+// 				Point( bin_w*(i), hist_h - cvRound(histogram_image.at<float>(i,0)) ),
+// 				255, 2, 8, 0  );
+// 		}
+// 		imshow("histogram", histImage );
+// 		waitKey(1);
+// 	}
 }
 void segment::sjbh()
 {
@@ -988,6 +999,15 @@ void segment::compute_height()
 			}
 		}
 	}
+	cout<<"--------"<<endl;
+	for (int i=height_map.rows-1;i>=0;--i)
+	{
+		cout<<"height:"<<height_map.at<float>(i,160)<<endl;
+	}
+// 	cout<<"height 1:"<<height_map.at<float>(180,150)<<endl
+// 		<<"height 2:"<<height_map.at<float>(220,150)<<endl
+// 		<<"height 3:"<<height_map.at<float>(180,110)<<endl
+// 		<<"height 4:"<<height_map.at<float>(220,110)<<endl;
 	double height_min,height_max;
 	minMaxLoc(height_map,&height_min,&height_max);
 /*	cout<<"height min: "<<height_min<<endl<<"height max: "<<height_max<<endl;*/

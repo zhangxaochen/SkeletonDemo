@@ -114,7 +114,7 @@ plyr.SeekToFrame("MyDepth", 999, XN_PLAYER_SEEK_SET);
 			//my_seg.set_name(s);
 			//my_seg.set_depthMap(depth);
 			//my_seg.set_background(depth);
-			//my_seg.set_headTemplate2D("headtemplate.bmp");
+			my_seg.set_headTemplate2D("headtemplate.bmp");
 
 			vector<Point> seed;
 			Mat mask;
