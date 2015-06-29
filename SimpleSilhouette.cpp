@@ -192,11 +192,12 @@ namespace zc{
 	Mat fetchBgMskUseWallAndHeight(Mat dmat){
 		static Mat res;
 
-		static Mat dmatOld;// = dmat.clone();
+		//static Mat dmatOld;// = dmat.clone();
+		Mat dmatOld = getPrevDmat();
 		if (dmatOld.empty() || countNonZero(dmatOld != dmat) > 0)
 			res = getBgMskUseWallAndHeight(dmat);// , debugDraw);
 
-		dmatOld = dmat.clone();
+		//dmatOld = dmat.clone();
 
 		return res;
 	}//fetchBgMskUseWallAndHeight
@@ -952,11 +953,13 @@ namespace zc{
 	Mat fetchFloorApartMask(Mat dmat, bool debugDraw /*= false*/){
 		static Mat res;
 
-		static Mat dmatOld;// = dmat.clone();
+		//static Mat dmatOld;// = dmat.clone();
+		Mat dmatOld = getPrevDmat();
+
 		if (dmatOld.empty() || countNonZero(dmatOld != dmat) > 0)
 			res = getFloorApartMask(dmat, debugDraw);
 
-		dmatOld = dmat.clone();
+		//dmatOld = dmat.clone();
 		
 		return res;
 	}//fetchFloorApartMask
@@ -1044,11 +1047,13 @@ namespace zc{
 	Mat fetchHeightMap(Mat dmat, bool debugDraw /*= false*/){
 		static Mat res;
 
-		static Mat dmatOld;
+		//static Mat dmatOld;
+		Mat dmatOld = getPrevDmat();
+
 		if (dmatOld.empty() || countNonZero(dmatOld != dmat) > 0)
 			res = calcHeightMap0(dmat, debugDraw);
 
-		dmatOld = dmat.clone();
+		//dmatOld = dmat.clone();
 
 		return res;
 	}//fetchHeightMap
@@ -1132,11 +1137,13 @@ namespace zc{
 	int fetchWallDepth(Mat &dmat){
 		static int res;
 
-		static Mat dmatOld;
+		//static Mat dmatOld;
+		Mat dmatOld = getPrevDmat();
+
 		if (dmatOld.empty() || countNonZero(dmatOld != dmat) > 0)
 			res = getWallDepth(dmat);
 
-		dmatOld = dmat.clone();
+		//dmatOld = dmat.clone();
 
 		return res;
 
@@ -1196,6 +1203,43 @@ namespace zc{
 		return fgPxCnt > fgPxCntThresh;
 	}//isHumanMask
 
+	Mat fetchDmatGrayscale(const Mat &dmat){
+		static Mat res;
+
+		//static Mat dmatOld;
+		Mat dmatOld = getPrevDmat();
+
+		if (dmatOld.empty() || countNonZero(dmatOld != dmat) > 0)
+			dmat.convertTo(res, CV_8UC1, 1. * UCHAR_MAX / MAX_VALID_DEPTH);
+
+		//dmatOld = dmat.clone();
+
+		return res;
+	}//fetchDmatGrayscale
+
+	Mat getHumanEdge(const Mat &dmat, bool debugDraw /*= false*/){
+		Mat edge_up,
+			edge_ft,
+			edge_whole;
+		Mat dm_draw = fetchDmatGrayscale(dmat);
+		
+		//上半身边缘：
+		int th_low = 40;
+		Canny(dm_draw, edge_up, th_low, th_low * 2);
+		if (debugDraw){
+			imshow("getHumanEdge.edge_up", edge_up);
+		}
+
+		//脚部边缘：
+		Mat flrApartMsk = fetchFloorApartMask(dmat);
+		Canny(flrApartMsk, edge_ft, 64, 128);
+		if (debugDraw){
+			imshow("getHumanEdge.edge_ft", edge_ft);
+		}
+		edge_whole = edge_up + edge_ft;
+
+		return edge_whole;
+	}//getHumanEdge
 
 	vector<vector<Point> > distMap2contours(const Mat &dmat, bool debugDraw /*= false*/, OutputArray _debug_mat /*= noArray()*/){
 	//vector<vector<Point> > distMap2contours( const Mat &dmat, bool debugDraw /*= false*/ ){
@@ -1216,24 +1260,28 @@ namespace zc{
 			edge_whole_inv,
 			distMap,
 			bwImg;			//宽黑边二值图
-		normalize(dmat, dm_draw, 0, UCHAR_MAX, NORM_MINMAX, CV_8UC1);
+// 		normalize(dmat, dm_draw, 0, UCHAR_MAX, NORM_MINMAX, CV_8UC1);
+// 
+// 		//TODO: 要不要做纵向高斯，解决手臂把身体分成两段的问题？不根本，暂时放弃
+// 
+// 		int th_low = 40;
+// 		Canny(dm_draw, edge_up, th_low, th_low*2);
+// 		if(debugDraw){
+// 			imshow("distMap2contours.edge_up", edge_up);
+// 		}
+// 
+// 		//Mat flrApartMsk = getFloorApartMask(dmat);
+// 		Mat flrApartMsk = fetchFloorApartMask(dmat);
+// 		Canny(flrApartMsk, edge_ft, 64, 128);
+// 		if(debugDraw){
+// 			imshow("distMap2contours.edge_ft", edge_ft);
+// 		}
+// 
+// 		//edge_whole = edge_up;
+// 		edge_whole = edge_up + edge_ft;
 
-		//TODO: 要不要做纵向高斯，解决手臂把身体分成两段的问题？不根本，暂时放弃
+		edge_whole = getHumanEdge(dmat, debugDraw);
 
-		int th_low = 40;
-		Canny(dm_draw, edge_up, th_low, th_low*2);
-		if(debugDraw){
-			imshow("distMap2contours.edge_up", edge_up);
-		}
-
-		Mat flrApartMsk = getFloorApartMask(dmat);
-		Canny(flrApartMsk, edge_ft, 64, 128);
-		if(debugDraw){
-			imshow("distMap2contours.edge_ft", edge_ft);
-		}
-
-		//edge_whole = edge_up;
-		edge_whole = edge_up + edge_ft;
 		edge_whole_inv = (edge_whole==0);
 		if(debugDraw){
 			imshow("distMap2contours.edge_whole", edge_whole);

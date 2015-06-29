@@ -136,6 +136,12 @@ namespace zc{
 	bool isHumanContour(const vector<Point> &cont);
 	bool isHumanMask(const Mat &msk, int fgPxCntThresh = 1000);
 
+	//没用 normalize， 因为会导致不同帧灰度比不同；用 convertTo -> 1. * UCHAR_MAX / MAX_VALID_DEPTH
+	Mat fetchDmatGrayscale(const Mat &dmat);
+	//上半身、脚部分别canny，求和，得到人体较清晰的轮廓。白色描边
+	Mat getHumanEdge(const Mat &dmat, bool debugDraw = false);
+
+
 	//@deprecated
 	Mat distMap2contoursDebug(const Mat &dmat, bool debugDraw = false);
 
