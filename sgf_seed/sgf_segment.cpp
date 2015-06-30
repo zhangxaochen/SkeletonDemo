@@ -1,4 +1,5 @@
 #include "sgf_segment.h"
+//#include "SimpleSilhouette.h"
 #include <time.h>
 #include <cmath>
 
@@ -38,6 +39,7 @@ void segment::set_depthMap(const cv::Mat& depth)
 	minMaxLoc(depth_map,&dmin,&dmax);
 	max_depth=dmax;min_depth=dmin;
 	depth_map.convertTo(gray_clone,CV_8U,255.0/(dmax-dmin),-dmin*255.0/(dmax-dmin));
+	gray_map=gray_clone.clone();
 }
 bool segment::set_headTemplate2D(const std::string &headTemplatePath)
 {
@@ -80,9 +82,9 @@ void segment::compute_distanceMap_2D()
 {
 // 	edge_map_thresh=Mat::ones(200,200,CV_8U);
 // 	edge_map_thresh.at<uchar>(100,100)=0;
-	int time_begin=clock();
+//	int time_begin=clock();
 	distanceTransform(edge_map_thresh,distance_map,distance_type,mask_type);
-	cout<<"time cost in distance transform:"<<clock()-time_begin<<endl;
+//	cout<<"time cost in distance transform:"<<clock()-time_begin<<endl;
 	double dmax,dmin;
 	minMaxLoc(distance_map,&dmin,&dmax);
 	distance_map.convertTo(distance_map_uchar,CV_8U,255.0/(dmax-dmin),-dmin*255.0/(dmax-dmin));
@@ -98,7 +100,7 @@ void segment::compute_subsamples()
 {
 	sub_distance_maps.clear();
 	Mat src=distance_map_uchar.clone();
-	sub_distance_maps.push_back(src.clone());
+	//sub_distance_maps.push_back(src.clone());
 
 	//自己实现采样率为3/4的金字塔
 	while (src.rows>150&&src.cols>150)
@@ -122,7 +124,9 @@ void segment::compute_response()
 	{
 		cv::Mat matching_space;
 		matching_space.create(sub_distance_maps[i].cols-head_template.cols+1,sub_distance_maps[i].rows-head_template.rows+1, CV_32FC1 );
+		int t=clock();
 		matchTemplate(sub_distance_maps[i],head_template,matching_space, CV_TM_CCORR_NORMED );
+//		cout<<"template time:"<<clock()-t<<endl;
 
 		double dmax,dmin;
 		minMaxLoc(matching_space,&dmin,&dmax);
@@ -240,24 +244,31 @@ vector<Point> segment::seedSGF(Mat dmat,bool showResult,bool seed_raw,Mat& depth
 // 	waitKey(1);
 
 
+//	smooth_image();
 	int begin=clock();
-	smooth_image();
+	int t1=clock();
+	
 
-	seperate_foot_and_ground();
- 	compute_filter_map_edge(threshold_filter_min,threshold_filter_max);
+//	seperate_foot_and_ground();
+// 	compute_filter_map_edge(threshold_filter_min,threshold_filter_max);
 // // 	imshow("seperate foot and ground",filter_map);
 // // 	waitKey(1);
 // 
  	compute_edge(threshold_depth_min,threshold_depth_max);
 // // 	imshow("depth edge",edge_map_thresh);
 // // 	waitKey(1);
- 	edge_map_thresh=edge_map_thresh+filter_edge;
+// 	edge_map_thresh=edge_map_thresh+filter_edge;
 // 	imshow("edge",edge_map_thresh);
 // 	waitKey(1);
 	threshold(edge_map_thresh,edge_map_thresh,128,255,THRESH_BINARY_INV);
 
-	cout<<"canny and seperate foot time cost:"<<clock()-begin<<endl;
+//	edge_map_thresh=zc::getHumanEdge(depth_map);
+
+//	cout<<"canny and seperate foot time cost:"<<clock()-t1<<endl;
+
+	t1=clock();
 	compute_distanceMap_2D();
+//	cout<<"distance transform time:"<<clock()-t1<<endl;
 // 	imshow("distance 1",distance_map_uchar);
 // 
 // 
@@ -274,34 +285,44 @@ vector<Point> segment::seedSGF(Mat dmat,bool showResult,bool seed_raw,Mat& depth
 // 	LUT(distance_map_uchar,lut,distance_map_lut);
 // 	imshow("distance 2",distance_map_lut);
 // 	waitKey(1);
-// 
+ 
+	t1=clock();
  	equalizeHist(distance_map_uchar,distance_map_uchar);
+//	cout<<"hist equalize time:"<<clock()-t1<<endl;
 // 	imshow("distance 3",distance_map_uchar);
 // 	waitKey(1);
 // 
 // 
+	t1=clock();
 	compute_subsamples();
+//	cout<<"pyr time:"<<clock()-t1<<endl;
 
+	t1=clock();
 	compute_response();
+//	cout<<"response time:"<<clock()-t1<<endl;
 
+	t1=clock();
 	region_of_interest.clear();
 	region_of_interest_raw.clear();
 	interest_point=edge_map_thresh.clone();
 	interest_point_raw=edge_map_thresh.clone();
-	interest_point1=edge_map_thresh.clone();
-	interest_point2=edge_map_thresh.clone();
-	interest_point3=edge_map_thresh.clone();
-	interest_point4=edge_map_thresh.clone();
+// 	interest_point1=edge_map_thresh.clone();
+ 	interest_point2=edge_map_thresh.clone();
+// 	interest_point3=edge_map_thresh.clone();
+// 	interest_point4=edge_map_thresh.clone();
 	find_and_draw_countours();
+//	cout<<"raw contours time:"<<clock()-t1<<endl;
+	t1=clock();
 	choose_and_draw_interest_region();
 
-	region_grow_map=Mat::zeros(distance_map.rows,distance_map.cols,CV_8U);
-	mask_of_distance=Mat::zeros(distance_map.rows,distance_map.cols,CV_8U);
-	for (int i=0;i<region_of_interest.size();++i)
-	{
-		stack_list.clear();
-		/*region_grow(region_of_interest[i].y,region_of_interest[i].x,1);*/
-	}
+// 	region_grow_map=Mat::zeros(distance_map.rows,distance_map.cols,CV_8U);
+// 	mask_of_distance=Mat::zeros(distance_map.rows,distance_map.cols,CV_8U);
+// 	for (int i=0;i<region_of_interest.size();++i)
+// 	{
+// 		stack_list.clear();
+// 		/*region_grow(region_of_interest[i].y,region_of_interest[i].x,1);*/
+// 	}
+//	cout<<"choose seed time:"<<clock()-t1<<endl;
 	cout<<"time spend:"<<clock()-begin<<endl;
 
 	display();
@@ -341,7 +362,7 @@ void segment::find_and_draw_countours()
 			findContours(tmp,contours, CV_RETR_LIST , CV_CHAIN_APPROX_NONE );
 
 			//对找到的轮廓进行处理，比如去掉太小的轮廓或者大致形状不满足要求的轮廓，或者均值方差等不满足要求
-			deal_with_contours(contours,i);
+			deal_with_contours(contours,i+1);
 
 			/*drawContours(contour_image,contours,-1,0,CV_FILLED);*/
 		}
@@ -661,14 +682,14 @@ void segment::choose_and_draw_interest_region()
 	headpoints_location.clear();
 	headpoints_radius.clear();
 	vector<Point>::iterator it;
-	for (int i=0;i<region_of_interest_raw.size();++i)
-	{
-		Point2i p=region_of_interest_raw[i];
-		int x=p.x;
-		int y=p.y;
-		double _r=distance_map.at<float>(y,x);
-		circle(interest_point_raw,p,_r,0,2);
-	}
+// 	for (int i=0;i<region_of_interest_raw.size();++i)
+// 	{
+// 		Point2i p=region_of_interest_raw[i];
+// 		int x=p.x;
+// 		int y=p.y;
+// 		double _r=distance_map.at<float>(y,x);
+// 		circle(interest_point_raw,p,_r,0,2);
+//	}
 	for (it=region_of_interest.begin();it!=region_of_interest.end();)
 	{
 		Point2i p=*it;
@@ -680,13 +701,13 @@ void segment::choose_and_draw_interest_region()
 		//double _R=1.33*_h/2;
 		double _r=distance_map.at<float>(y,x);
 
-		circle(interest_point1,p,_r,0,2);
+		//circle(interest_point1,p,_r,0,2);
 		int x_min=max(0,int(x-_r*a)),x_max=min(int(x+_r*a),depth_map.cols-1);
 		int y_min=max(0,int(y-_r*a));
 		double bz=_r/_R;
 		if (bz>threshold_headsize_min&&bz<threshold_headsize_max&&_r>5)
 		{
-			circle(interest_point3,p,_r,0,2);
+			//circle(interest_point3,p,_r,0,2);
 			if (depth+const_depth<depth_map.at<float>(y,x_min)&&depth+const_depth<depth_map.at<float>(y,x_max)
 			&&depth+const_depth<depth_map.at<float>(y_min,x))//头部大小与深度值关系规则，需要调参)
 			{
@@ -734,54 +755,54 @@ void segment::choose_and_draw_interest_region()
 	}
 
 	//分析结果是否正确
-	if (headpoints_location.size()==2)
-	{
-/*		accurate++;*/
-		bool right=true;
-		for (int i=0;i<headpoints_location.size();++i)
-		{
-			Point2i p=headpoints_location[i];
-			if ((p.x>90&&p.x<150)||(p.x>170&&p.x<230))
-			{
-				if (p.y>0&&p.y<60)
-				{
-					right=true;
-				}
-				else
-				{
-					right=false;
-					break;
-				}
-			}
-			else
-			{
-				right=false;
-				break;
-			}
-		}
-		if (right)
-		{
-			accurate++;
-		}
-	}
+// 	if (headpoints_location.size()==2)
+// 	{
+// /*		accurate++;*/
+// 		bool right=true;
+// 		for (int i=0;i<headpoints_location.size();++i)
+// 		{
+// 			Point2i p=headpoints_location[i];
+// 			if ((p.x>90&&p.x<150)||(p.x>170&&p.x<230))
+// 			{
+// 				if (p.y>0&&p.y<60)
+// 				{
+// 					right=true;
+// 				}
+// 				else
+// 				{
+// 					right=false;
+// 					break;
+// 				}
+// 			}
+// 			else
+// 			{
+// 				right=false;
+// 				break;
+// 			}
+// 		}
+// 		if (right)
+// 		{
+// 			accurate++;
+// 		}
+// 	}
 }
 void segment::display()
 {
 // 	if (show_result)
 // 	{	
-// 		imshow("result",interest_point);
+		imshow("result",interest_point);
+		waitKey(1);
+// 		imshow("result of raw headpoints",interest_point_raw);
 // 		waitKey(1);
-		imshow("result of raw headpoints",interest_point_raw);
-		waitKey(1);
-		imshow("result with thresh ckb",interest_point1);
-		waitKey(1);
+// 		imshow("result with thresh ckb",interest_point1);
+// 		waitKey(1);
 		imshow("result",interest_point2);
 		waitKey(1);
 		//imwrite(name+".jpg",interest_point2);
-		imshow("result with all methods",interest_point4);
-		waitKey(1);
-		imshow("result with thresh ckb and headsize",interest_point3);
-		waitKey(1);
+// 		imshow("result with all methods",interest_point4);
+// 		waitKey(1);
+// 		imshow("result with thresh ckb and headsize",interest_point3);
+// 		waitKey(1);
 //	}
 // 	if (do_region_grow)
 // 	{
