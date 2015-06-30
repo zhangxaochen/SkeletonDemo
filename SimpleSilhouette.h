@@ -27,7 +27,9 @@ extern int thickLimit;// = thickLimitDefault; //ºÁÃ×
 
 
 namespace zc{
-#if CV_VERSION_MAJOR < 3
+#ifdef CV_VERSION_EPOCH
+//#if CV_VERSION_MAJOR < 3
+
 //lincccc's code below:
 	//BPRecognizer* getBprAndLoadFeature();
 	//BPRecognizer* getBprAndLoadFeature(const char *featurePath = nullptr);

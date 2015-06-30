@@ -1,9 +1,11 @@
 #ifndef __bodyPartRecognizer_h_
 #define __bodyPartRecognizer_h_
-#if CV_VERSION_MAJOR < 3
-//lincccc's code below:
 
 #include "opencv2/opencv.hpp"
+#ifdef CV_VERSION_EPOCH //2.4.x major is '4', use EPOCH instead
+//#if CV_VERSION_MAJOR < 3
+//lincccc's code below:
+
 #include "depthSample.h"
 #include "depthFeature.h"
 #include <list>

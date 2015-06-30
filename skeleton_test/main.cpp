@@ -13,6 +13,7 @@ using namespace cv;
 #define ZCDEBUG_LV1 1	//显示关键结果图
 #define ZCDEBUG_LV2 0	//显示某些中间结果图
 #define ZCDEBUG_WRITE 0
+#define ZC_CLEAN 01
 
 int g_ImgIndex = 0;
 
@@ -56,7 +57,7 @@ void nmhSilhouAndSklt( Mat &dm, int fid ){
 	//种子点寻找：
 	begt = clock();
 	int veryDepth = -1;
-	Point seed = zc::simpleSeed(dm, &veryDepth, ZCDEBUG_LV1);
+	Point seed = zc::seedSimple(dm, &veryDepth, ZCDEBUG_LV1);
 	//cout<<"simpleSeed.t: "<<clock()-begt<<endl;
 	seedSumt += (clock()-begt);
 
@@ -137,19 +138,19 @@ void main(int argc, char **argv){
 //  	oniFname = "E:/oni_data/oni132_orig/zc-indoor_sit2.oni";
 
 // 	oniFname = "E:/oni_data/oni132_orig/sgf-zc_indoor_issue_gesture.oni";
- 	oniFname = "E:/oni_data/oni132_orig/sgf-zc_indoor_issue_gesture-102-350.oni";
+	//oniFname = "E:/oni_data/oni132_orig/sgf-zc_indoor_issue_gesture-102-350.oni";
 	//oniFname = "E:/oni_data/oni132_orig/sgf-zc_indoor_issue_gesture-2156-2589.oni";
 	
 	//oniFname = "E:/oni_data/oni132x64/sgf_zc_w_feet-wo-overlap.oni";
 	
 	//oniFname = "E:/oni_data/oni132x64/zc-walk-wo-feet-qvga-107x.oni";
-	 	//oniFname = "E:/oni_data/oni132_orig/zc_indoor_walk.oni";
+		//oniFname = "E:/oni_data/oni132_orig/zc_indoor_walk.oni";
 	// 	oniFname = "E:/oni_data/oni132_orig/zc_indoor_walk-last.oni";
 	// 	oniFname = "E:/oni_data/oni132x64/zc-stand-w-feet.oni";
 	//oniFname = "E:/oni_data/oni132x64/zc-stand-wo-feet-qvga.oni";
 
 	xn::Player plyr;
-  	//rc = ctx.OpenFileRecording(oniFname, plyr);
+	rc = ctx.OpenFileRecording(oniFname, plyr);
 	plyr.SeekToFrame("Depth1", std::stoi(argv[1]), XN_PLAYER_SEEK_SET);
 	plyr.SetRepeat(string(argv[2])=="true"); //放在 OpenFileRecording 之后才有效
 	if(!checkOpenNIError(rc, "ctx.OpenFileRecording"))
@@ -238,7 +239,7 @@ void main(int argc, char **argv){
 
 		//---------------top-down-view 上画 conts, 粗线、细线bboxs
 		Mat tdv_debug_draw;
-		vector<vector<Point>> tdv_cont_good = zc::dmat2TopDownView(dm, ZCDEBUG_LV1, tdv_debug_draw);
+		vector<vector<Point>> tdv_cont_good = zc::dmat2TopDownView(dm, 0.0255, ZCDEBUG_LV1, tdv_debug_draw);
 		Mat tdv_cont_good_draw = Mat::zeros(dm.size(), CV_8UC1);
 		drawContours(tdv_cont_good_draw, tdv_cont_good, -1, 255, -1);
 		if(ZCDEBUG_LV1){
@@ -251,8 +252,8 @@ void main(int argc, char **argv){
 		//---------------在top-down-view 上同时画两种 contours, bbox, 观察求交结果
 		begt = clock();
 		Mat bbox_cross_draw;
-		vector<Mat> bboxMsks = zc::findHumanMasksUseBbox(dm, ZCDEBUG_LV1, bbox_cross_draw);
-		cout<<"findHumanMasksUseBbox.rate: "<<1.*(clock()-begt)/(fid+1)<<endl;
+		vector<Mat> bboxMsks = zc::findFgMasksUseBbox(dm, ZCDEBUG_LV1, bbox_cross_draw);
+		cout<<"findFgMasksUseBbox.rate: "<<1.*(clock()-begt)/(fid+1)<<endl;
 		if(ZCDEBUG_LV1)
 			imshow("bbox_cross_draw", bbox_cross_draw);
 
@@ -292,19 +293,19 @@ void main(int argc, char **argv){
 		//---------------2. 孙国飞寻找头部种子点：
 		normalize(dm, dm_draw, UCHAR_MAX, 0, NORM_MINMAX, CV_8UC1);
 
-		begt = clock();
-		const string sgf_configPath = "../../sgf_seed/config.txt",
-			sgf_headTemplatePath = "../../sgf_seed/headtemplate.bmp";
-		vector<Point> sgfSeeds = zc::getHeadSeeds(dm, 
-			sgf_configPath, sgf_headTemplatePath, ZCDEBUG_LV1);
-		sgfSeedSumt += (clock()-begt);
-		cout<<"sgfSeeds.size(): "<<sgfSeeds.size()<<endl;
-		
-
-		for(size_t i=0; i<sgfSeeds.size(); i++){
-			Point sdi = sgfSeeds[i];
-			circle(dm_draw, sdi, 9, 255, 2);
-		}
+// 		begt = clock();
+// 		const string sgf_configPath = "../../sgf_seed/config.txt",
+// 			sgf_headTemplatePath = "../../sgf_seed/headtemplate.bmp";
+// 		vector<Point> sgfSeeds = zc::getHeadSeeds(dm, 
+// 			sgf_configPath, sgf_headTemplatePath, ZCDEBUG_LV1);
+// 		sgfSeedSumt += (clock()-begt);
+// 		cout<<"sgfSeeds.size(): "<<sgfSeeds.size()<<endl;
+// 		
+// 
+// 		for(size_t i=0; i<sgfSeeds.size(); i++){
+// 			Point sdi = sgfSeeds[i];
+// 			circle(dm_draw, sdi, 9, 255, 2);
+// 		}
 		imshow("1-dm_draw", dm_draw);
 		if(ZCDEBUG_WRITE)
 			imwrite("1-dm_draw_"+std::to_string((long long)fid)+".jpg", dm_draw);
@@ -316,7 +317,7 @@ void main(int argc, char **argv){
 		//+++++++++++++++
 		begt = clock();
 		//vector<Mat> fgMsks = zc::simpleRegionGrow(dm, sgfSeeds, rgThresh, flrApartMsk, true, ZCDEBUG_LV1);
-		vector<Mat> fgMsks = zc::findHumanMasksUseBbox(dm, false);
+		vector<Mat> fgMsks = zc::findFgMasksUseBbox(dm, false);
 
 		rg2msksSumt += (clock()-begt);
 		int regionCnt = fgMsks.size();
@@ -370,13 +371,13 @@ void main(int argc, char **argv){
 				drawContours(soloContMask, contours, idx, 255, -1);
 
 				//兼容林驰代码：
-				Mat tmpDm;
-				dm.convertTo(tmpDm, CV_32SC1);
+				Mat dm32s;
+				dm.convertTo(dm32s, CV_32SC1);
 				//背景填充最大值，所以前景反而黑色：
-				tmpDm.setTo(INT_MAX, soloContMask==0);
+				dm32s.setTo(INT_MAX, soloContMask==0);
 				//imshow("tmpDm", tmpDm);
 
-				IplImage depthImg = tmpDm;
+				IplImage depthImg = dm32s;
 				bool useDense = false,
 					useErode = false,
 					usePre = true;

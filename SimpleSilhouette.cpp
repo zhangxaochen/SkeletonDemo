@@ -21,7 +21,8 @@ namespace zc{
 #define FEATURE_PATH "../../../plugins/orbbec_skeleton/feature"
 #endif
 
-#if CV_VERSION_MAJOR < 3
+#ifdef CV_VERSION_EPOCH
+//#if CV_VERSION_MAJOR < 3
 //lincccc's code below:
 	BPRecognizer* getBprAndLoadFeature(const string &featurePath){
 		static BPRecognizer *bpr = nullptr;
@@ -35,7 +36,7 @@ namespace zc{
 		}
 		return bpr;
 	}
-#endif
+#endif //CV_VERSION_EPOCH
 
 	// COCiter == Container of Containers Iterator
 	// Oiter == Output Iterator
@@ -2222,8 +2223,15 @@ namespace zc{
 		return Rect(xyBbox.x, dmin, xyBbox.width, dmax - dmin);
 	}//contour2XZbbox
 
-
-#if CV_VERSION_MAJOR >= 3
+#ifdef CV_VERSION_EPOCH
+// #if CV_VERSION_EPOCH >= 2
+// #elif
+// 
+// #else
+// 	//TODO
+// #if CV_VERSION_MAJOR >= 3
+// #endif // CV_VERSION_EPOCH
+#elif CV_VERSION_MAJOR >= 3
 	cv::Mat seedUseBGS(Mat &dmat, bool isNewFrame /*= true*/, bool usePre /*= false*/, bool debugDraw /*= false*/){
 		Mat dm_show, tmp;
 		dmat.convertTo(dm_show, CV_8UC1, 1.*UCHAR_MAX / MAX_VALID_DEPTH);
@@ -2447,7 +2455,8 @@ namespace zc{
 		if (humVecSize == 0 && fgMskSize > 0){
 			cout << "+++++++++++++++humVecSize == 0" << endl;
 			for (size_t i = 0; i < fgMskSize; i++){
-				outHumVec.push_back({ dmatClone, fgMasks[i] });
+				//outHumVec.push_back({ dmatClone, fgMasks[i] });
+				outHumVec.push_back(HumanFg(dmatClone, fgMasks[i]));
 			}
 		}
 		//若已检测到 HumanFg, 且单帧 fgMasks 无论有无内容可更新：
@@ -2471,7 +2480,7 @@ namespace zc{
 				if (fgMsksUsedFlagVec[i]==true)
 					continue;
 
-				outHumVec.push_back({ dmatClone, fgMasks[i] });
+				outHumVec.push_back(HumanFg(dmatClone, fgMasks[i]));
 			}
 		}
 
