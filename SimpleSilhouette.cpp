@@ -1203,14 +1203,23 @@ namespace zc{
 		return fgPxCnt > fgPxCntThresh;
 	}//isHumanMask
 
+	Mat getDmatGrayscale(const Mat &dmat){
+		Mat res;
+		dmat.convertTo(res, CV_8UC1, 1. * UCHAR_MAX / MAX_VALID_DEPTH);
+		return res;
+	}//getDmatGrayscale
+
 	Mat fetchDmatGrayscale(const Mat &dmat){
 		static Mat res;
 
 		//static Mat dmatOld;
 		Mat dmatOld = getPrevDmat();
 
-		if (dmatOld.empty() || countNonZero(dmatOld != dmat) > 0)
-			dmat.convertTo(res, CV_8UC1, 1. * UCHAR_MAX / MAX_VALID_DEPTH);
+		if (dmatOld.empty() || countNonZero(dmatOld != dmat) > 0){
+			//dmat.convertTo(res, CV_8UC1, 1. * UCHAR_MAX / MAX_VALID_DEPTH);
+
+			res = getDmatGrayscale(dmat);
+		}
 
 		//dmatOld = dmat.clone();
 
