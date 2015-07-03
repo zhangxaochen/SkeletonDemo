@@ -7,6 +7,9 @@
 #include "CapgSkeleton.h"
 #include "bodyPartRecognizer.h"
 
+#include "sgf_segment.h"
+//using namespace sgf;
+
 using namespace std;
 using namespace cv;
 
@@ -329,7 +332,15 @@ namespace zc{
 	CapgSkeleton calcSkeleton(const Mat &dmat, const Mat &fgMsk);
 
 
+#pragma region //孙国飞头部种子点
 
+	//单例模式，返回单例指针
+	sgf::segment* loadSeedHeadConf(const char *confFn, const char *templFn);
+
+	//孙国飞实现的头部种子点方法
+	vector<Point> seedHead(const Mat &dmat, bool debugDraw = false);
+
+#pragma endregion //孙国飞头部种子点
 
 
 }//namespace zc

@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <functional>
 
+
 //@deprecated, 已验证： 0√， 1×
 //abs-diff 时选用当前点深度还是平均深度：
 const int mode = 01; //0当前， 1平均
@@ -2672,8 +2673,29 @@ namespace zc{
 	}//calcSkeleton
 #endif //CV_VERSION_EPOCH
 
+#pragma region //孙国飞头部种子点
+	static const char *sgfConfigFname = nullptr;
+	static const char *sgfTemplFname = nullptr;
+	static sgf::segment *my_seg = nullptr;
+	sgf::segment* loadSeedHeadConf(const char *confFn, const char *templFn){
+// 		sgfConfigFname = confFn;
+// 		sgfTemplFname = templFn;
+		if (my_seg == nullptr){
+			my_seg = new sgf::segment();
+			my_seg->read_config(confFn);
+			my_seg->set_headTemplate2D(templFn);
+		}
 
+		return my_seg;
+	}
 
+	vector<Point> seedHead(const Mat &dmat, bool debugDraw /*= false*/){
+		CV_Assert(my_seg != nullptr);
+
+		return my_seg->seedSGF(dmat, debugDraw);
+	}
+
+#pragma endregion //孙国飞头部种子点
 
 
 
