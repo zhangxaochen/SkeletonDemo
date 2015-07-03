@@ -5,6 +5,8 @@
 #include <string>
 #include <list>
 
+
+
 /*
 implement of human detection using depth information by Kinect.
 */
@@ -18,8 +20,10 @@ namespace sgf
 // 			bool do_region_grow1=false,bool show_responses1=false,bool show_histogram1=false);
 // 		segment(bool show_result1=false,bool show_depth_without_bg1=false,
 // 			bool show_topdown_view1=false,bool show_topdown_binary1=false);
-		segment();
+		segment(bool _mode=0,bool _show=1,bool _debug=0,bool simpleMOG=0);
 		void set_depthMap(const cv::Mat&);
+		void set_mog_par(int history,int varthreshold,bool detect_shadow,int learningRate);
+
 		void set_background(const cv::Mat&);
 		bool set_headTemplate2D(const std::string &headTemplatePath);
 		cv::Mat get_edgeMapWithThresh();
@@ -59,6 +63,7 @@ namespace sgf
 		void find_bg();
 		void compute_height();
 		void compute_cost();
+		void useMOG();
 
 
 	private:
@@ -77,14 +82,21 @@ namespace sgf
 		double height_center,cost_threshold;
 		/*-----*/
 
+		bool _SGF_DEBUG,_SGF_SHOW,_SGF_MODE,_MOG;
+		int mog_history,mog_varthreshold,mog_lr;
+		bool mog_detect_shadow;
+
 		double max_depth,min_depth;
 		double height_absolute;
+
+		bool has_set_depth;
 
 		bool do_region_grow,show_histogram,show_distance_map,
 			show_edge,show_responses,show_result,show_depth_without_bg,
 			show_topdown_view,show_topdown_binary;
 		
 		std::string name;
+		cv::BackgroundSubtractorMOG2 my_MOG;
 
 		cv::Mat background_depth;
 		cv::Mat difference_map;

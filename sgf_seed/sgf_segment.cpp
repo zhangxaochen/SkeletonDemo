@@ -29,16 +29,39 @@ using namespace cv;
 // 	show_topdown_binary=show_topdown_binary1;
 // }
 
-segment::segment(){}
+segment::segment(bool _mode,bool _show,bool _debug,bool simpleMOG)
+{
+	_SGF_MODE=_mode;
+	_SGF_DEBUG=_debug;
+	_SGF_SHOW=_show;
+	_MOG=simpleMOG;
+
+	has_set_depth=false;
+
+	my_MOG=BackgroundSubtractorMOG2(200,20,false);
+}
+
+void segment::set_mog_par(int history,int varthreshold,bool detect_shadow,int learningRate)
+{
+	mog_history=history;
+	mog_varthreshold=varthreshold;
+	mog_lr=learningRate;
+	mog_detect_shadow=detect_shadow;
+}
 
 void segment::set_depthMap(const cv::Mat& depth)
 {
-	depth_map=depth.clone();
-	depth_map.convertTo(depth_map,CV_32F);
+	if (!has_set_depth)
+	{
+		depth_map=depth.clone();
+		//has_set_depth=true;
+	}
+	depth_map.convertTo(depth_map,CV_32FC1);
 	double dmax,dmin;
 	minMaxLoc(depth_map,&dmin,&dmax);
 	max_depth=dmax;min_depth=dmin;
-	depth_map.convertTo(gray_clone,CV_8U,255.0/(dmax-dmin),-dmin*255.0/(dmax-dmin));
+	//depth_map.convertTo(gray_clone,CV_8U,255.0/(dmax-dmin),-dmin*255.0/(dmax-dmin));
+	depth_map.convertTo(gray_clone,CV_8UC1,255.0/8000,0);
 	gray_map=gray_clone.clone();
 }
 bool segment::set_headTemplate2D(const std::string &headTemplatePath)
@@ -106,14 +129,16 @@ void segment::compute_subsamples()
 	while (src.rows>150&&src.cols>150)
 	{
 		int c=src.cols*3/4,r=src.rows*3/4;
-		Mat sub=Mat::zeros(r,c,CV_8U);
-		for (int i=0;i<r;++i)
-		{
-			for (int j=0;j<c;++j)
-				sub.at<uchar>(i,j)=src.at<uchar>(i+i/3,j+j/3);
-		}
-		sub_distance_maps.push_back(sub.clone());
-		src=sub;
+		//cout<<" width: "<<c<<" height: "<<r<<endl;
+		resize(src,src,Size(c,r));
+// 		Mat sub=Mat::zeros(r,c,CV_8U);
+// 		for (int i=0;i<r;++i)
+// 		{
+// 			for (int j=0;j<c;++j)
+// 				sub.at<uchar>(i,j)=src.at<uchar>(i+i/3,j+j/3);
+// 		}
+		sub_distance_maps.push_back(src.clone());
+		//src=sub;
 	}
 }
 void segment::compute_response()
@@ -176,32 +201,50 @@ vector<Point> segment::seedSGF(Mat dmat,bool showResult,bool seed_raw,Mat& depth
 	set_depthMap(dmat);
 	
 	//fill_holes();
+	//smooth_image();
+	if (_MOG)
+	{
+		useMOG();
+		vector<Point> res;
+		return res;
+	}
 
-// 	compute_hist();
-// 
-// 	compute_height();
-// 
-// 	smooth_image();
-// 
-// 	seperate_foot_and_ground();
-// 
-// 	sjbh();
-// // 	imshow("depth mask",depth_mask);
-// // 	waitKey(1);
-// 	compute_cost();
-// 
-// 
-// 	if (showResult)
-// 	{
-// 		imshow("result",gray_clone);
+	int begin=clock();
+	int t1=clock();
+
+	if (_SGF_MODE)
+	{
+		compute_hist();
+
+		compute_height();
+
+		//smooth_image();
+
+		seperate_foot_and_ground();
+
+		sjbh();
+// 		imshow("depth mask",depth_mask);
 // 		waitKey(1);
-// 		imshow("depth without bg mask",depth_mask);
-// 		waitKey(1);
-// 		imshow("top down view",depth_sjbh);
-// 		waitKey(1);
-// 		imshow("top down view binary",sjbh_binary);
-// 		waitKey(1);
-// 	}
+		compute_cost();
+		if (_SGF_DEBUG)
+		{
+			cout<<"time spend:"<<clock()-begin<<endl;
+		}
+		if (_SGF_SHOW)
+		{
+			imshow("result",gray_clone);
+			waitKey(1);
+			imshow("depth without bg mask",depth_mask);
+			waitKey(1);
+			imshow("top down view",depth_sjbh);
+			waitKey(1);
+			imshow("top down view binary",sjbh_binary);
+			waitKey(1);
+		}
+		return get_seed();
+	}
+
+
 // 
 // 	depth_without_bg=depth_mask.clone();
 // 	if (!seed_raw)
@@ -245,8 +288,6 @@ vector<Point> segment::seedSGF(Mat dmat,bool showResult,bool seed_raw,Mat& depth
 
 
 //	smooth_image();
-	int begin=clock();
-	int t1=clock();
 	
 
 //	seperate_foot_and_ground();
@@ -254,6 +295,8 @@ vector<Point> segment::seedSGF(Mat dmat,bool showResult,bool seed_raw,Mat& depth
 // // 	imshow("seperate foot and ground",filter_map);
 // // 	waitKey(1);
 // 
+	else
+	{
  	compute_edge(threshold_depth_min,threshold_depth_max);
 // // 	imshow("depth edge",edge_map_thresh);
 // // 	waitKey(1);
@@ -323,11 +366,16 @@ vector<Point> segment::seedSGF(Mat dmat,bool showResult,bool seed_raw,Mat& depth
 // 		/*region_grow(region_of_interest[i].y,region_of_interest[i].x,1);*/
 // 	}
 //	cout<<"choose seed time:"<<clock()-t1<<endl;
-	cout<<"time spend:"<<clock()-begin<<endl;
-
-	display();
-	vector<Point> res;
-	return res;
+	if (_SGF_DEBUG)
+	{
+		cout<<"time spend:"<<clock()-begin<<endl;
+	}
+	if (_SGF_SHOW)
+	{
+		display();
+	}
+	return headpoints_location;
+	}
 }
 void segment::output(string name)
 {
@@ -1020,10 +1068,10 @@ void segment::compute_height()
 			}
 		}
 	}
-	cout<<"--------"<<endl;
+	//cout<<"--------"<<endl;
 	for (int i=height_map.rows-1;i>=0;--i)
 	{
-		cout<<"height:"<<height_map.at<float>(i,160)<<endl;
+		//cout<<"height:"<<height_map.at<float>(i,160)<<endl;
 	}
 // 	cout<<"height 1:"<<height_map.at<float>(180,150)<<endl
 // 		<<"height 2:"<<height_map.at<float>(220,150)<<endl
@@ -1141,4 +1189,18 @@ vector<Point2i> segment::get_seed_raw()
 vector<Point2i> segment::get_seed()
 {
 	return headpoints_location_1;
+}
+void segment::useMOG()
+{
+	imshow("raw image",gray_map);waitKey(1);
+	//BackgroundSubtractorMOG2 bgMOG(10, 2, false );
+	Mat fg_depth;
+	my_MOG.operator()(gray_map,fg_depth,0.0005);
+	//bgMOG.operator()(gray_map,fg_depth);
+	Mat bg_depth;
+	//pMOG->getBackgroundImage(bg_depth);
+	//bgMOG.getBackgroundImage(bg_depth);
+	//bg_depth.convertTo(bg_depth,CV_8U);
+	//fg_depth.convertTo(fg_depth,CV_8U);
+	imshow("foreground of MOG",fg_depth);waitKey(1);
 }
