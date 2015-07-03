@@ -10,12 +10,24 @@
 using namespace std;
 using namespace cv;
 
-#define ZCDEBUG_LV1 1	//显示关键结果图
-#define ZCDEBUG_LV2 0	//显示某些中间结果图
-#define ZCDEBUG_WRITE 0
+#define ZC_DEBUG_LV1 1	//显示关键结果图
+#define ZC_DEBUG_LV2 0	//显示某些中间结果图
+#define ZC_WRITE 0
 #define ZC_CLEAN 01
 
+#define CAPG_SKEL_VERSION_0_1 //最初交付的代码版本
 int g_ImgIndex = 0;
+
+#undef CAPG_SKEL_VERSION_0_1 //改用 v0.9. 2015年7月1日00:07:01
+#define CAPG_SKEL_VERSION_0_9 //对应 skeleton_test v0.9. 2015年6月30日23:59:18
+
+//按空格，则手动播放：
+bool isManually = false;
+bool isExit = false;
+//定位到：
+int seekId = -1;
+
+
 
 clock_t begt,
 	seedSumt = 0,
@@ -40,6 +52,7 @@ bool checkOpenNIError(XnStatus rc, string status){
 		return true;
 }//checkOpenNIError
 
+#ifdef CAPG_SKEL_VERSION_0_1
 void nmhSilhouAndSklt( Mat &dm, int fid ){
 	normalize(dm, dm_draw, UCHAR_MAX, 0, NORM_MINMAX, CV_8UC1);
 
@@ -52,18 +65,18 @@ void nmhSilhouAndSklt( Mat &dm, int fid ){
 	// 		imshow("canny", edge);
 
 	//时序上前后帧求 abs(sub)
-	Mat currPreDiffMsk = zc::simpleMask(dm, ZCDEBUG_LV1);
+	Mat currPreDiffMsk = zc::simpleMask(dm, ZC_DEBUG_LV1);
 
 	//种子点寻找：
 	begt = clock();
 	int veryDepth = -1;
-	Point seed = zc::seedSimple(dm, &veryDepth, ZCDEBUG_LV1);
+	Point seed = zc::seedSimple(dm, &veryDepth, ZC_DEBUG_LV1);
 	//cout<<"simpleSeed.t: "<<clock()-begt<<endl;
 	seedSumt += (clock()-begt);
 
 	circle(dm_draw, seed, 3, 255, 2);
 
-	if(ZCDEBUG_LV1){
+	if(ZC_DEBUG_LV1){
 		Mat vdMat;
 		findNonZero(dm==veryDepth, vdMat);
 		printf("vdMat.total(): %d\n", vdMat.total());
@@ -76,11 +89,11 @@ void nmhSilhouAndSklt( Mat &dm, int fid ){
 	begt = clock();
 	//纵向简单去掉屏幕下缘 1/4，即地面,防止脚部与地面连成一片：
 	Rect rgRoi(0, 0, dm.cols, dm.rows*3/4);
-	Mat fgMsk = zc::_simpleRegionGrow(dm, seed, rgThresh, rgRoi, ZCDEBUG_LV1);
+	Mat fgMsk = zc::_simpleRegionGrow(dm, seed, rgThresh, rgRoi, ZC_DEBUG_LV1);
 	//cout<<"simpleRegionGrow.t: "<<clock()-begt<<endl;
 	rgSumt += (clock()-begt);
-	if(ZCDEBUG_WRITE)
-		imwrite("simpFlagMat_"+std::to_string((long long)fid)+".jpg", fgMsk);
+	if(ZC_WRITE)
+		imwrite("simpFlagMat_"+std::to_string((long long) (long long)fid)+".jpg", fgMsk);
 
 
 	//兼容林驰代码：
@@ -105,9 +118,10 @@ void nmhSilhouAndSklt( Mat &dm, int fid ){
 	// 		printf("labelMat.depth(): %d, %d, %d\n", labelMat.depth(), labelMat.channels(), labelMat.type()); //0, 1, 0
 
 	begt = clock();
-	bpr->predictAndMergeJoint(&depthImg, tSklt, &maskImg, false, false, ZCDEBUG_LV1);
+	bpr->predictAndMergeJoint(&depthImg, tSklt, &maskImg, false, false, ZC_DEBUG_LV1);
 	predAndMergeSumt  += (clock()-begt);
 }//nmhSilhouAndSklt
+#endif // CAPG_SKEL_VERSION_0_1
 
 
 void main(int argc, char **argv){
@@ -115,7 +129,7 @@ void main(int argc, char **argv){
 
 	float zoomFactor = 1;
 
-	int frameCntr = 0;
+	int frameCnt = 0;
 
 	XnStatus rc = XN_STATUS_OK;
 	
@@ -133,7 +147,7 @@ void main(int argc, char **argv){
 // 	
 	//oniFname = "E:/oni_data/oni132x64/sgf-zc-sit-front-desk.oni";
 // 	oniFname = "E:/oni_data/oni132x64/sgf-zc-sit-low-front-desk-wall.oni";
-	oniFname = "E:/oni_data/oni132x64/sgf-zc-sit-no-front-desk-wall.oni";
+	//oniFname = "E:/oni_data/oni132x64/sgf-zc-sit-no-front-desk-wall.oni";
 // 	oniFname = "E:/oni_data/oni132_orig/zc-indoor_sit.oni";
 //  	oniFname = "E:/oni_data/oni132_orig/zc-indoor_sit2.oni";
 
@@ -150,7 +164,7 @@ void main(int argc, char **argv){
 	//oniFname = "E:/oni_data/oni132x64/zc-stand-wo-feet-qvga.oni";
 
 	xn::Player plyr;
-	rc = ctx.OpenFileRecording(oniFname, plyr);
+	//rc = ctx.OpenFileRecording(oniFname, plyr);
 	plyr.SeekToFrame("Depth1", std::stoi(argv[1]), XN_PLAYER_SEEK_SET);
 	plyr.SetRepeat(string(argv[2])=="true"); //放在 OpenFileRecording 之后才有效
 	if(!checkOpenNIError(rc, "ctx.OpenFileRecording"))
@@ -177,25 +191,26 @@ void main(int argc, char **argv){
 		return;
 
 	char key = 0;
-	while(key != 27){
-		frameCntr++;
-		//frameCntr = depthMD.FrameID(); //若计时用，不用 .FrameID
+	while(1){
+		frameCnt++;
+		//frameCnt = depthMD.FrameID(); //若计时用，不用 .FrameID
 		int fid = depthMD.FrameID();
-		cout<<"frameCntr, fid: "<<frameCntr<<", "<<fid<<endl;
+		cout<<"frameCnt, fid: "<<frameCnt<<", "<<fid<<endl;
 
 		ctx.WaitAndUpdateAll();
 
 		dg.GetMetaData(depthMD);
-		Mat dm(depthMD.FullYRes(), depthMD.FullXRes(), CV_16UC1, (void*)depthMD.Data());
+		Mat dmat(depthMD.FullYRes(), depthMD.FullXRes(), CV_16UC1, (void*)depthMD.Data());
 
 		//临时去掉太深的杂乱背景，填充为最深：
 		//dm.setTo(MAX_VALID_DEPTH, dm>6000);
 		//pyrDown(dm, dm, Size(dm.cols*zoomFactor, dm.rows*zoomFactor));
 		//dm.resize(Size(dm.cols*zoomFactor, dm.rows*zoomFactor));	//×, is cv:resize
 		Mat dm_resized; //在线运行时，内存不可改，故此
-		resize(dm, dm_resized, Size(dm.cols*zoomFactor, dm.rows*zoomFactor));
-		dm = dm_resized;
+		resize(dmat, dm_resized, Size(dmat.cols*zoomFactor, dmat.rows*zoomFactor));
+		dmat = dm_resized;
 
+#ifdef CAPG_SKEL_VERSION_0_1
 #pragma region //测试 distMap2contours[Debug], dmat2TopDownView[Debug]
 // 		begt = clock();
 // 		Mat cont_draw = zc::distMap2contoursDebug(dm, ZCDEBUG_LV1);
@@ -209,13 +224,13 @@ void main(int argc, char **argv){
 		
 		//测试对比两个函数distMap2contours， distMap2contoursDebug实现是否一致：
 		Mat dist_cont_debug_draw;
-		vector<vector<Point> > distMapContGood = zc::distMap2contours(dm, ZCDEBUG_LV1, dist_cont_debug_draw);
+		vector<vector<Point> > distMapContGood = zc::distMap2contours(dmat, ZC_DEBUG_LV1, dist_cont_debug_draw);
 
-		Mat dist_cont_draw_good = Mat::zeros(dm.size(), CV_8UC1);
+		Mat dist_cont_draw_good = Mat::zeros(dmat.size(), CV_8UC1);
 		drawContours(dist_cont_draw_good, distMapContGood, -1, 255, -1);
-		if(ZCDEBUG_LV1){
+		if(ZC_DEBUG_LV1){
 			imshow("dist_cont_debug_draw", dist_cont_debug_draw);
-			if(ZCDEBUG_WRITE)
+			if(ZC_WRITE)
 				imwrite("dist_cont_debug_draw_"+std::to_string((long long)fid)+".jpg", dist_cont_debug_draw);
 
 			imshow("dist_cont_draw_good", dist_cont_draw_good);
@@ -231,7 +246,7 @@ void main(int argc, char **argv){
 // 
 // 		topDownViewSumt += (clock()-begt);
 // 		if(ZCDEBUG_LV1){
-// 			cout<<"topDownViewSumt.rate: "<<1.*topDownViewSumt/frameCntr<<endl;
+// 			cout<<"topDownViewSumt.rate: "<<1.*topDownViewSumt/frameCnt<<endl;
 // 			imshow("topDownView", topDownView);
 // 			if(ZCDEBUG_WRITE)
 // 				imwrite("topDownView_"+std::to_string((long long)fid)+".jpg", topDownView);
@@ -239,28 +254,28 @@ void main(int argc, char **argv){
 
 		//---------------top-down-view 上画 conts, 粗线、细线bboxs
 		Mat tdv_debug_draw;
-		vector<vector<Point>> tdv_cont_good = zc::dmat2TopDownView(dm, 0.0255, ZCDEBUG_LV1, tdv_debug_draw);
-		Mat tdv_cont_good_draw = Mat::zeros(dm.size(), CV_8UC1);
+		vector<vector<Point>> tdv_cont_good = zc::dmat2TopDownView(dmat, 0.0255, ZC_DEBUG_LV1, tdv_debug_draw);
+		Mat tdv_cont_good_draw = Mat::zeros(dmat.size(), CV_8UC1);
 		drawContours(tdv_cont_good_draw, tdv_cont_good, -1, 255, -1);
-		if(ZCDEBUG_LV1){
+		if(ZC_DEBUG_LV1){
 			imshow("tdv_cont_good_draw", tdv_cont_good_draw);
 			imshow("tdv_debug_draw", tdv_debug_draw);
-			if(ZCDEBUG_WRITE)
+			if(ZC_WRITE)
 				imwrite("tdv_debug_draw_"+std::to_string((long long)fid)+".jpg", tdv_debug_draw);
 		}
 
 		//---------------在top-down-view 上同时画两种 contours, bbox, 观察求交结果
 		begt = clock();
 		Mat bbox_cross_draw;
-		vector<Mat> bboxMsks = zc::findFgMasksUseBbox(dm, ZCDEBUG_LV1, bbox_cross_draw);
+		vector<Mat> bboxMsks = zc::findFgMasksUseBbox(dmat, ZC_DEBUG_LV1, bbox_cross_draw);
 		cout<<"findFgMasksUseBbox.rate: "<<1.*(clock()-begt)/(fid+1)<<endl;
-		if(ZCDEBUG_LV1)
+		if(ZC_DEBUG_LV1)
 			imshow("bbox_cross_draw", bbox_cross_draw);
 
 		cout<<"bboxMsks.size: "<<bboxMsks.size()<<endl;
-		if(ZCDEBUG_LV1){
+		if(ZC_DEBUG_LV1){
 			imshow("bbox_cross_draw", bbox_cross_draw);
-			if(ZCDEBUG_WRITE)
+			if(ZC_WRITE)
 				imwrite("bbox_cross_draw_"+std::to_string((long long)fid)+".jpg", bbox_cross_draw);
 
 // 			if(bboxMsks.size() > 0){
@@ -272,9 +287,9 @@ void main(int argc, char **argv){
 // 					imwrite("bboxMsksSum_"+std::to_string((long long)fid)+".jpg", bboxMsksSum);
 // 			}
 
-			Mat humans_draw = zc::getHumansMask(bboxMsks, dm.size());
+			Mat humans_draw = zc::getHumansMask(bboxMsks, dmat.size());
 			imshow("humans_draw", humans_draw);
-			if(ZCDEBUG_WRITE)
+			if(ZC_WRITE)
 				imwrite("humans_draw_"+std::to_string((long long)fid)+".jpg", humans_draw);
 
 		}
@@ -283,7 +298,7 @@ void main(int argc, char **argv){
 
 #pragma region //测试【背景减除】
 		//background subtraction:
-		Mat bgsMat = zc::simpleMask(dm, ZCDEBUG_LV1);
+		Mat bgsMat = zc::simpleMask(dmat, ZC_DEBUG_LV1);
 
 #pragma endregion //测试【背景减除】
 
@@ -291,7 +306,7 @@ void main(int argc, char **argv){
 		//nmhSilhouAndSklt(dm, fid);
 
 		//---------------2. 孙国飞寻找头部种子点：
-		normalize(dm, dm_draw, UCHAR_MAX, 0, NORM_MINMAX, CV_8UC1);
+		normalize(dmat, dm_draw, UCHAR_MAX, 0, NORM_MINMAX, CV_8UC1);
 
 // 		begt = clock();
 // 		const string sgf_configPath = "../../sgf_seed/config.txt",
@@ -307,17 +322,17 @@ void main(int argc, char **argv){
 // 			circle(dm_draw, sdi, 9, 255, 2);
 // 		}
 		imshow("1-dm_draw", dm_draw);
-		if(ZCDEBUG_WRITE)
+		if(ZC_WRITE)
 			imwrite("1-dm_draw_"+std::to_string((long long)fid)+".jpg", dm_draw);
 
 		begt = clock();
-		Mat flrApartMsk = zc::getFloorApartMask(dm, false);
+		Mat flrApartMsk = zc::getFloorApartMask(dmat, false);
 		cout<<"getFloorApartMask.rate: "<<1.*(clock()-begt)/(fid+1)<<endl;
 
 		//+++++++++++++++
 		begt = clock();
 		//vector<Mat> fgMsks = zc::simpleRegionGrow(dm, sgfSeeds, rgThresh, flrApartMsk, true, ZCDEBUG_LV1);
-		vector<Mat> fgMsks = zc::findFgMasksUseBbox(dm, false);
+		vector<Mat> fgMsks = zc::findFgMasksUseBbox(dmat, false);
 
 		rg2msksSumt += (clock()-begt);
 		int regionCnt = fgMsks.size();
@@ -340,7 +355,7 @@ void main(int argc, char **argv){
 		for(size_t ir=0; ir<regionCnt; ir++){
 			Mat soloFgMsk = fgMsks[ir];
 
-			if(ZCDEBUG_LV2)
+			if(ZC_DEBUG_LV2)
 				imshow("soloFgMsk-"+std::to_string((long long)ir), soloFgMsk);
 
 			//open, 找最大cont, 如果是人，则predict得到sklt：
@@ -367,12 +382,12 @@ void main(int argc, char **argv){
 			//vector<Point> &theCont = contours[idx];
 			if(zc::isHumanContour(contours[idx])){
 				
-				Mat soloContMask = Mat::zeros(dm.size(), CV_8UC1);
+				Mat soloContMask = Mat::zeros(dmat.size(), CV_8UC1);
 				drawContours(soloContMask, contours, idx, 255, -1);
 
 				//兼容林驰代码：
 				Mat dm32s;
-				dm.convertTo(dm32s, CV_32SC1);
+				dmat.convertTo(dm32s, CV_32SC1);
 				//背景填充最大值，所以前景反而黑色：
 				dm32s.setTo(INT_MAX, soloContMask==0);
 				//imshow("tmpDm", tmpDm);
@@ -390,10 +405,10 @@ void main(int argc, char **argv){
 				Mat soloLabelMat = bpr->predict(&depthImg, nullptr, useDense, usePre);
 				predictSumt += (clock()-begt);
 
-				if(ZCDEBUG_LV2){
+				if(ZC_DEBUG_LV2){
 					Mat rgbSoloLabelMat = label_gray2rgb(soloLabelMat);
 					imshow("rgbSoloLabelMat-"+std::to_string((long long)ir), rgbSoloLabelMat);
-					if(ZCDEBUG_WRITE)
+					if(ZC_WRITE)
 						imwrite("rgbSoloLabelMat-"+std::to_string((long long)ir)+"_"+std::to_string((long long)fid)+".jpg", rgbSoloLabelMat);
 				}
 
@@ -525,27 +540,164 @@ void main(int argc, char **argv){
 
 		cout<<"sklts.size(): "<<sklts.size()<<endl;
 
-		Mat skCanvas = Mat::ones(dm.size(), CV_8UC1)*UCHAR_MAX;
+		Mat skCanvas = Mat::ones(dmat.size(), CV_8UC1)*UCHAR_MAX;
 		zc::drawSkeletons(skCanvas, sklts, -1);
 		imshow("8-skCanvas", skCanvas);
-		if(ZCDEBUG_LV1){
+		if(ZC_DEBUG_LV1){
 			imshow("8-skCanvas", skCanvas);
-			if(ZCDEBUG_WRITE)
+			if(ZC_WRITE)
 				imwrite("8-skCanvas_"+std::to_string((long long)fid)+".jpg", skCanvas);
 		}
+#endif // CAPG_SKEL_VERSION_0_1
+
+#ifdef CAPG_SKEL_VERSION_0_9 //对应 ZC_CLEAN
+		clock_t begttotal = clock();
+
+		//必须：初始化prevDmat
+		zc::initPrevDmat(dmat);
+		static vector<Mat> prevMaskVec;
+		static vector<HumanFg> humVec;
+
+		clock_t begt = clock();
+		//A.去除背景 & 地面：
+		Mat bgMsk = zc::fetchBgMskUseWallAndHeight(dmat);
+		Mat flrApartMask = zc::fetchFloorApartMask(dmat, false);
+		Mat maskedDmat = dmat.clone();
+		maskedDmat.setTo(0, bgMsk | (flrApartMask == 0));
+		//只去地面，不去掉墙：
+		//maskedDmat.setTo(0, flrApartMask == 0);
+		cout << "aaa.maskedDmat.ts: " << clock() - begt << endl;
+		if (ZC_DEBUG_LV1){
+			Mat maskedDmat_show;
+			normalize(maskedDmat, maskedDmat_show, 0, UCHAR_MAX, NORM_MINMAX, CV_8UC1);
+			imshow("atmp-maskedDmat", maskedDmat_show);
+		}
+
+		//---------------测试高度计算
+		Mat htMap0 = zc::calcHeightMap0(dmat);
+		Mat htMap = zc::calcHeightMap1(dmat);
+		if (ZC_DEBUG_LV1){
+			Mat htMap0_show, htMap_show;
+			int maxHt = 3e3;
+			htMap0.convertTo(htMap0_show, CV_8U, 1.* UCHAR_MAX / maxHt);
+			htMap.convertTo(htMap_show, CV_8U, 1.* UCHAR_MAX / maxHt);
+			imshow("htMap0_show", htMap0_show);
+			imshow("htMap_show", htMap_show);
+		}
+
+		//B.初步找前景，初始化，此处用的bbox方法：
+		begt = clock();
+		//vector<Mat> fgMskVec = zc::findFgMasksUseWallAndHeight(dmat, ZC_DEBUG_LV1);
+		Mat tmp;
+		vector<Mat> fgMskVec = zc::findFgMasksUseBbox(maskedDmat, ZC_DEBUG_LV1, tmp);
+		cout << "bbb.findFgMasksUseBbox.ts: " << clock() - begt << endl;
+		if (ZC_DEBUG_LV1){
+			Mat btmp = zc::getHumansMask(fgMskVec, dmat.size());
+			string txt = "fgMskVec.size: " + to_string((long long)fgMskVec.size());
+			putText(btmp, txt, Point(0, 50), FONT_HERSHEY_PLAIN, 1, 255);
+			imshow("btmp-bbox-init", btmp);
+		}
+
+		if (ZC_DEBUG_LV1){
+			Mat prevMaskVec2msk = zc::getHumansMask(prevMaskVec, dmat.size());
+			string txt = "prevMaskVec.size: " + to_string((long long) prevMaskVec.size());
+			putText(prevMaskVec2msk, txt, Point(0, 50), FONT_HERSHEY_PLAIN, 1, 255);
+			imshow("prevMaskVec2msk", prevMaskVec2msk);
+		}
+
+
+		//C.不动点跟踪，使前景补全、稳定：
+		begt = clock();
+		fgMskVec = zc::trackingNoMove(dmat, prevMaskVec, fgMskVec, ZC_DEBUG_LV1);
+		cout << "ccc.trackingNoMove.ts: " << clock() - begt << endl;
+		if (ZC_DEBUG_LV1){
+			Mat ctmp = zc::getHumansMask(fgMskVec, dmat.size());
+			string txt = "fgMskVec.size: " + to_string((long long) fgMskVec.size());
+			putText(ctmp, txt, Point(0, 50), FONT_HERSHEY_PLAIN, 1, 255);
+			imshow("ctmp-trackingNoMove", ctmp);
+		}
+
+		//D.后处理，对突然分离成几部分的前景，做分离、过滤处理
+		begt = clock();
+
+		//---------------保留sep-xy作为对比测试：
+		//fgMskVec = zc::separateMasksXYview(dmat, fgMskVec, ZC_DEBUG_LV1);
+
+		//---------------目前使用sep-xz：
+		fgMskVec = zc::separateMasksXZview(dmat, fgMskVec, ZC_DEBUG_LV1);
+		prevMaskVec = fgMskVec;
+		cout << "ddd.separateMasksXZview.ts: " << clock() - begt << endl;
+		static int tSumt = 0;
+		tSumt += (clock() - begttotal);
+		cout << "find+tracking.rate: " << 1.*tSumt / (frameCnt + 1) << endl;
+
+		if (ZC_DEBUG_LV1){
+			Mat dtmp = zc::getHumansMask(fgMskVec, dmat.size());
+			string txt = "fgMskVec.size: " + to_string((long long) fgMskVec.size());
+			putText(dtmp, txt, Point(0, 50), FONT_HERSHEY_PLAIN, 1, 255);
+
+			imshow("dtmp-separateMasks", dtmp);
+		}
+
+		Mat humMsk = zc::getHumansMask(fgMskVec, dmat.size());
+		if (ZC_DEBUG_LV1){
+			// 			QtFont font = fontQt("Times");
+			// 			cv::addText(humMsk, "some-text", { 55, 55 }, font);
+			putText(humMsk, "fid: " + to_string((long long) fid), Point(0, 30), FONT_HERSHEY_PLAIN, 1, 255);
+			imshow("humMsk", humMsk);
+			if (ZC_WRITE)
+				imwrite("humMsk_" + std::to_string((long long) (long long)fid) + ".jpg", humMsk);
+		}
+
+		zc::getHumanObjVec(dmat, fgMskVec, humVec);
+		if (humVec.size())
+			int dummy = 0;
+		Mat humMsk彩色 = zc::getHumansMask(dmat, humVec);
+		if (ZC_DEBUG_LV1){
+			putText(humMsk彩色, "fid: " + to_string((long long) fid), Point(0, 30), 
+				FONT_HERSHEY_PLAIN, 1, Scalar(255, 255, 255));
+
+			putText(humMsk彩色, "humVec.size: " + to_string((long long) humVec.size()), Point(0, 50), 
+				FONT_HERSHEY_PLAIN, 1, Scalar(255, 255, 255));
+
+			imshow("humMsk-color", humMsk彩色);
+			if (ZC_WRITE)
+				imwrite("humMsk-color_" + std::to_string((long long) (long long)fid) + ".jpg", humMsk彩色);
+
+			//绘制多人骨骼：
+			Mat skCanvas = Mat::ones(dmat.size(), CV_8UC1)*UCHAR_MAX;
+			zc::drawSkeletons(skCanvas, humVec, -1);
+			imshow("skCanvas", skCanvas);
+		}
+
+
+#endif // CAPG_SKEL_VERSION_0_9
 
 // 		if(fid>113)
 // 			key = waitKey(0);
-		key = waitKey(01);
-	}//while
+		//key = waitKey(01);
+		key = waitKey(isManually ? 0 : 1);
+		switch (key)
+		{
+		case 27: //ESC
+			isExit = true;
+			break;
+		case ' ': //暂停&逐帧
+			isManually = !isManually;
+			break;
+		}//switch
+
+		if(isExit)
+			break;
+	}//while-1
 
 	//统计几个平均时间(ms)：
-	cout<<"frameCntr:: seedSumt, sgfSeedSumt, rg2msksSumt, rgSumt, cannySumt, predAndMergeSumt, predictSumt, distMap2contoursSumt: "
-		<<frameCntr<<":: "
-		<<seedSumt*1./frameCntr<<", "<<sgfSeedSumt*1./frameCntr<<", "
-		<<rg2msksSumt*1./frameCntr<<", "<<rgSumt*1./frameCntr<<", "<<cannySumt*1./frameCntr<<", "
-		<<predAndMergeSumt*1./frameCntr<<", "<<predictSumt*1./frameCntr<<", "
-		<<distMap2contoursSumt*1./frameCntr<<", "
+	cout<<"frameCnt:: seedSumt, sgfSeedSumt, rg2msksSumt, rgSumt, cannySumt, predAndMergeSumt, predictSumt, distMap2contoursSumt: "
+		<<frameCnt<<":: "
+		<<seedSumt*1./frameCnt<<", "<<sgfSeedSumt*1./frameCnt<<", "
+		<<rg2msksSumt*1./frameCnt<<", "<<rgSumt*1./frameCnt<<", "<<cannySumt*1./frameCnt<<", "
+		<<predAndMergeSumt*1./frameCnt<<", "<<predictSumt*1./frameCnt<<", "
+		<<distMap2contoursSumt*1./frameCnt<<", "
 		<<endl;
 
 	destroyAllWindows();

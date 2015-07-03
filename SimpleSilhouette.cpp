@@ -2,6 +2,7 @@
 #include "SimpleSilhouette.h"
 #include <iterator>
 #include <algorithm>
+#include <functional>
 
 //@deprecated, 已验证： 0√， 1×
 //abs-diff 时选用当前点深度还是平均深度：
@@ -21,6 +22,7 @@ namespace zc{
 #define FEATURE_PATH "../../../plugins/orbbec_skeleton/feature"
 #endif
 
+//#if 1
 #ifdef CV_VERSION_EPOCH
 //#if CV_VERSION_MAJOR < 3
 //lincccc's code below:
@@ -142,7 +144,8 @@ namespace zc{
 			Mat vdPts;
 			//findNonZero(roiMat==veryDepth, vdPts);
 			//尝试不用 roiMat：
-			findNonZero(dmat == veryDepth, vdPts);
+			if(countNonZero(dmat == veryDepth))
+				findNonZero(dmat == veryDepth, vdPts);
 			if (vdPts.total()>0){
 				//res = vdPts.at<Point>(0)+Point(left, top);
 				//尝试不用 roiMat：
@@ -675,7 +678,8 @@ namespace zc{
 		clock_t begt = clock();
 		//Mat sdPtsMat;
 		vector<Point> sdPtsVec;
-		findNonZero(sdsMat == UCHAR_MAX, sdPtsVec);
+		if(countNonZero(sdsMat == UCHAR_MAX))
+			findNonZero(sdsMat == UCHAR_MAX, sdPtsVec);
 		if (debugDraw){
 			cout << "sdPtsVec.size: " << sdPtsVec.size()
 				<< ", .ts: " << clock() - begt << endl;
@@ -734,7 +738,8 @@ namespace zc{
 		else{
 
 			vector<Point> sdsVec;
-			findNonZero(sdsMat == UCHAR_MAX, sdsVec);
+			if(countNonZero(sdsMat == UCHAR_MAX))
+				findNonZero(sdsMat == UCHAR_MAX, sdsVec);
 
 			return simpleRegionGrow(dmat, sdsVec, thresh, mask, getMultiMasks, debugDraw);
 		}
@@ -790,7 +795,8 @@ namespace zc{
 				tmp.at<uchar>(i, j) = maskMat.at<uchar>(i, j);
 			}
 		}
-		findNonZero(tmp == UCHAR_MAX, res);
+		if(countNonZero(tmp == UCHAR_MAX))
+			findNonZero(tmp == UCHAR_MAX, res);
 
 		//已验证， <1ms
 		cout << "maskMat2pts.ts: " << clock() - begt << endl;
@@ -1181,6 +1187,16 @@ namespace zc{
 		}
 	}//drawSkeletons
 
+	void drawSkeletons( Mat &img, vector<HumanFg> &humObjVec, int skltIdx ){
+		vector<CapgSkeleton> sklts;
+		size_t humObjVecSz = humObjVec.size();
+		for(size_t i = 0; i < humObjVecSz; i++){
+			sklts.push_back(humObjVec[i].getSkeleton());
+		}
+
+		drawSkeletons(img, sklts, skltIdx);
+	}//drawSkeletons
+
 	//contours 引用， 会被修改
 	void eraseNonHumanContours(vector<vector<Point> > &contours){
 		vector<vector<Point> >::iterator it = contours.begin();
@@ -1290,7 +1306,9 @@ namespace zc{
 // 		//edge_whole = edge_up;
 // 		edge_whole = edge_up + edge_ft;
 
+		//clock_t begt = clock(); //1~2ms
 		edge_whole = getHumanEdge(dmat, debugDraw);
+		//cout << "getHumanEdge.ts: " << clock() - begt << endl;
 
 		edge_whole_inv = (edge_whole==0);
 		if(debugDraw){
@@ -2173,7 +2191,8 @@ namespace zc{
 						Mat colXZ_k = cmskXZ_i.col(k);//×
 
 						vector<Point> nonZeroPts;
-						findNonZero(colXZ_k, nonZeroPts);
+						if(countNonZero(colXZ_k))
+							findNonZero(colXZ_k, nonZeroPts);
 						Rect bboxCol_k = boundingRect(nonZeroPts);
 						int dmin = (bboxCol_k.y - 0.5) * rgThresh,
 							dmax = (bboxCol_k.br().y + 0.5) * rgThresh - 1; //【注意】 +0.5, -1
@@ -2442,6 +2461,36 @@ namespace zc{
 		return res;
 	}//getHumansMask
 
+
+	//vec-heap 做id资源池
+	static vector<int> idResPool;
+	std::greater<int> fnGt = std::greater<int>();
+
+	//要销毁一个 HumanFg 时， id放回资源池
+	void pushPool(int id){
+		static bool isFirstTime = true;
+
+		if (isFirstTime){
+			make_heap(idResPool.begin(), idResPool.end(), fnGt);
+		}
+
+		idResPool.push_back(id);
+		push_heap(idResPool.begin(), idResPool.end(), fnGt);
+
+	}//pushPool
+
+	//返回最小可用id；若无，返回-1
+	int getIdFromPool(){
+		if (idResPool.empty())
+			return -1;
+
+		int resId = idResPool.front();
+		pop_heap(idResPool.begin(), idResPool.end(), fnGt);
+		idResPool.pop_back();
+
+		return resId;
+	}
+
 	void getHumanObjVec(Mat &dmat, vector<Mat> fgMasks, vector<HumanFg> &outHumVec){
 		//全局队列：
 		//static vector<HumanFg> outHumVec;
@@ -2456,7 +2505,12 @@ namespace zc{
 			cout << "+++++++++++++++humVecSize == 0" << endl;
 			for (size_t i = 0; i < fgMskSize; i++){
 				//outHumVec.push_back({ dmatClone, fgMasks[i] });
-				outHumVec.push_back(HumanFg(dmatClone, fgMasks[i]));
+
+				int id = getIdFromPool();
+				if (id < 0)
+					id = outHumVec.size() + 1;
+				HumanFg humObj(dmatClone, fgMasks[i], id);
+				outHumVec.push_back(humObj);
 			}
 		}
 		//若已检测到 HumanFg, 且单帧 fgMasks 无论有无内容可更新：
@@ -2466,10 +2520,13 @@ namespace zc{
 
 			vector<HumanFg>::iterator it = outHumVec.begin();
 			while (it != outHumVec.end()){
-				bool isUpdated = it->updateMask(dmatClone, fgMasks, fgMsksUsedFlagVec);
+				bool isUpdated = it->updateDmatAndMask(dmatClone, fgMasks, fgMsksUsedFlagVec);
 				if (isUpdated)
 					it++;
 				else{
+					//释放唯一id到资源池
+					pushPool(it->getHumId());
+
 					it = outHumVec.erase(it);
 					cout << "------------------------------humVec.erase" << endl;
 				}
@@ -2480,7 +2537,13 @@ namespace zc{
 				if (fgMsksUsedFlagVec[i]==true)
 					continue;
 
-				outHumVec.push_back(HumanFg(dmatClone, fgMasks[i]));
+// 				outHumVec.push_back(HumanFg(dmatClone, fgMasks[i]));
+
+				int id = getIdFromPool();
+				if (id < 0)
+					id = outHumVec.size() + 1;
+				HumanFg humObj(dmatClone, fgMasks[i], id);
+				outHumVec.push_back(humObj);
 			}
 		}
 
@@ -2580,6 +2643,35 @@ namespace zc{
 	}//getPrevDmat
 
 
+#ifdef CV_VERSION_EPOCH
+	const string featurePath = "../../feature";
+	static BPRecognizer *bpr = nullptr;
+	CapgSkeleton calcSkeleton( const Mat &dmat, const Mat &fgMsk ){
+		Mat dm32s;
+		dmat.convertTo(dm32s, CV_32SC1);
+		//背景填充最大值，所以前景反而看起来黑色：
+		dm32s.setTo(INT_MAX, fgMsk==0);
+
+		IplImage depthImg = dm32s;
+		bool useDense = false,
+			useErode = false, 
+			usePre = true;
+
+		if(bpr == nullptr)
+			bpr = getBprAndLoadFeature(featurePath);
+
+		CapgSkeleton sklt;
+		Mat labelMat = bpr->predict(&depthImg, nullptr, useDense, usePre);
+		IplImage cLabelMat = labelMat;
+
+		useErode = false;
+		usePre = false;
+		bpr->mergeJoint(&cLabelMat, &depthImg, sklt, useErode, usePre);
+
+		return sklt;
+	}//calcSkeleton
+#endif //CV_VERSION_EPOCH
+
 
 
 
@@ -2594,5 +2686,120 @@ namespace zc{
 	}//postRegionGrow
 
 
+
+#pragma region //---------------HumanFg 成员函数们：
+
+	HumanFg::HumanFg( const Mat &dmat_, Mat currMask_, int humId ) 
+		:_dmat(dmat_), _humId(humId)
+		//,_currMask(currMask_)
+	{
+		//_currCenter = getContMassCenter(_currMask);
+		setCurrMask(currMask_);
+
+		if (_prevMask.empty()){
+			// 				_currMask.copyTo(_prevMask);
+			// 				_prevCenter = _currCenter;
+			setPrevMask(_currMask);
+		}
+
+		for (int i = 0; i < 3; i++)
+			_humColor[i] = rng.uniform(UCHAR_MAX/2, UCHAR_MAX);
+		_humColor[3] = 100;
+	}//HumanFg-ctor
+
+#ifdef CV_VERSION_EPOCH
+	void HumanFg::calcSkeleton(){
+		_sklt = zc::calcSkeleton(_dmat, _currMask);
+	}//calcSkeleton
+#endif //CV_VERSION_EPOCH
+
+	CapgSkeleton HumanFg::getSkeleton(){
+		return _sklt;
+	}//getSkeleton
+
+	bool HumanFg::updateDmatAndMask( const Mat &dmat, const vector<Mat> &fgMaskVec, vector<bool> &mskUsedFlags ){
+		//深度图更新：
+		_dmat = dmat;
+
+		//改用前后帧白色区域求交：
+		size_t fgMskVecSz = fgMaskVec.size();
+		bool foundNewMask = false;
+		for (size_t i = 0; i < fgMskVecSz; i++){
+			Mat fgMsk = fgMaskVec[i];
+			//求交：
+			Mat currNewIntersect = _currMask & fgMsk;
+			int intersectArea = countNonZero(currNewIntersect != 0),
+				fgMskArea = countNonZero(fgMsk != 0);
+			double percent = 0.5;
+
+			//2015年6月27日22:10:18
+
+			if (mskUsedFlags[i] == false
+				//质心不可靠
+				//&& fgMsk.at<uchar>(_currCenter) == UCHAR_MAX){
+				//mask交集占比，也不可靠
+				//&& (intersectArea > _currMaskArea * percent 
+				//	|| intersectArea > fgMskArea * percent)
+
+				//2015年6月27日22:08:20， mask交集区域深度差均值
+				//【注】：intersectArea>0必要，否则 mean=0导致误判
+				&& intersectArea > 0 && mean(abs(_dmat - dmat), currNewIntersect)[0] < 55
+				){
+
+					// 					_prevMask = _currMask;
+					// 					_prevCenter = _currCenter;
+					// 
+					// 					_currMask = fgMsk;
+					// 					_currCenter = getContMassCenter(_currMask);
+
+					setPrevMask(_currMask);
+					setCurrMask(fgMsk);
+
+					foundNewMask = true;
+					//标记某mask已被用过：
+					mskUsedFlags[i] = true;
+
+					break;
+			}
+		}
+
+		//若因 fgMasks_重叠度太低未找到，则认为跟丢：
+		if (!foundNewMask){
+			return false;
+		}
+
+		return true;
+	}//updateDmatAndMask
+
+	cv::Mat HumanFg::getCurrMask(){
+		return _currMask;
+	}//getCurrMask
+
+	void HumanFg::setCurrMask( Mat newMask ){
+		_currMask = newMask;
+		_currCenter = getContMassCenter(_currMask);
+		_currMaskArea = countNonZero(_currMask != 0);
+
+#ifdef CV_VERSION_EPOCH
+		//这里顺便计算骨架：
+		this->calcSkeleton();
+#endif //CV_VERSION_EPOCH
+
+	}//setCurrMask
+
+	void HumanFg::setPrevMask( Mat newMask ){
+		_prevMask = newMask;
+		_prevCenter = getContMassCenter(_prevMask);
+	}//setPrevMask
+
+	cv::Scalar HumanFg::getColor(){
+		return _humColor;
+	}//getColor
+
+	int HumanFg::getHumId(){
+		return _humId;
+	}//getHumId
+
+#pragma endregion //---------------HumanFg 成员函数们：
 
 }//zc

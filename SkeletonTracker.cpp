@@ -8,9 +8,14 @@ using namespace std;
 //using namespace zc;
 
 #define ZCDEBUG 1
+#define CAPG_SKEL_VERSION_0_1 //最初交付的代码版本
+
+#undef CAPG_SKEL_VERSION_0_1 //改用 v0.9. 2015年7月1日00:07:01
+#define CAPG_SKEL_VERSION_0_9 //对应 skeleton_test v0.9. 2015年6月30日23:59:18
 
 int g_ImgIndex = 0;
 
+#ifdef CAPG_SKEL_VERSION_0_1
 void nmhSilhouAndSklt(Mat &dm){
 	Mat dm_draw;
 	normalize(dm, dm_draw, UCHAR_MAX, 0, NORM_MINMAX, CV_8UC1);
@@ -58,6 +63,8 @@ void nmhSilhouAndSklt(Mat &dm){
 	bpr->predictAndMergeJoint(&depthImg, tSklt, &maskImg, usePre, useErode, ZCDEBUG);
 }//nmhSilhouAndSklt
 
+#endif // CAPG_SKEL_VERSION_0_1
+
 
 namespace sensekit { namespace plugins { namespace skeleton {
 
@@ -82,6 +89,8 @@ namespace sensekit { namespace plugins { namespace skeleton {
 
 		Mat dm(hh, ww, CV_16UC1, (void*)depthFrame.data());
 			
+#ifdef CAPG_SKEL_VERSION_0_1
+
 		//---------------1. NMH 简单种子点，silhouette； skeleton
 		//nmhSilhouAndSklt(dm);
 
@@ -197,6 +206,7 @@ namespace sensekit { namespace plugins { namespace skeleton {
 			imshow("8-skCanvas", skCanvas);
 		}
 		//+++++++++++++++
+#endif // CAPG_SKEL_VERSION_0_1
 
 
         sensekit_skeletonframe_wrapper_t* skeletonFrame = m_skeletonStream->begin_write(depthFrame.frameIndex());
@@ -213,6 +223,8 @@ namespace sensekit { namespace plugins { namespace skeleton {
 
 			//zhangxaochen:
 			static CoordinateMapper mapper = reader.stream<sensekit::DepthStream>().coordinateMapper();
+
+#ifdef CAPG_SKEL_VERSION_0_1
 
 			//---------------单人时，nmhSilhouAndSklt
 // 			for (size_t i = 0; i < 8; i++){
@@ -263,6 +275,8 @@ namespace sensekit { namespace plugins { namespace skeleton {
 				}
 
 			}
+
+#endif // CAPG_SKEL_VERSION_0_1
 
             
             m_skeletonStream->end_write();

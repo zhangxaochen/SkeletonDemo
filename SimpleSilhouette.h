@@ -27,6 +27,8 @@ extern int thickLimit;// = thickLimitDefault; //毫米
 
 
 namespace zc{
+	class HumanFg;
+
 #ifdef CV_VERSION_EPOCH
 //#if CV_VERSION_MAJOR < 3
 
@@ -134,6 +136,10 @@ namespace zc{
 	void drawOneSkeleton(Mat &img, CapgSkeleton &sk);
 	void drawSkeletons(Mat &img, const vector<CapgSkeleton> &sklts, int skltIdx);
 
+	//@Overload HumanFg-vec 版
+	void drawSkeletons(Mat &img, vector<HumanFg> &humObjVec, int skltIdx);
+
+
 	void eraseNonHumanContours(vector<vector<Point> > &contours);
 	bool isHumanContour(const vector<Point> &cont);
 	bool isHumanMask(const Mat &msk, int fgPxCntThresh = 1000);
@@ -215,191 +221,40 @@ namespace zc{
 	//返回不同灰度标记前景的mat
 	Mat getHumansMask(vector<Mat> masks, Size sz);
 
-
-	class HumanFg;
-
 	//用全局的 vector<HumanFg> 画一个彩色 mask mat:
 	Mat getHumansMask(Mat dmat, const vector<HumanFg> &humVec);
 
 	//应有粘性跟踪能力，多人场景下，uid不应突变
 	//跟踪(更新)策略为：
-	//1. _prevCenter位置前后帧深度变化较小
+	//某蒙板与当前某 humObj蒙板求交区域深度变化均值较小
 	void getHumanObjVec(Mat &dmat, vector<Mat> fgMasks, vector<HumanFg> &outHumVec);
 
 	class HumanFg
 	{
 	public:
-		HumanFg(const Mat &dmat_, Mat currMask_)
-			:_dmat(dmat_)
-			//,_currMask(currMask_)
-		{
-			//_currCenter = getContMassCenter(_currMask);
-			setCurrMask(currMask_);
-
-			if (_prevMask.empty()){
-// 				_currMask.copyTo(_prevMask);
-// 				_prevCenter = _currCenter;
-				setPrevMask(_currMask);
-			}
-
-			for (int i = 0; i < 3; i++)
-				_humColor[i] = rng.uniform(UCHAR_MAX/2, UCHAR_MAX);
-			_humColor[3] = 100;
-		}//HumanFg-ctor
-
-// 		void updateMask(Mat currMask_){
-// 
-// 		}//updateMask
+		HumanFg(const Mat &dmat_, Mat currMask_, int humId);
 
 		//若成功， 更新 this各项； 否则，返回false，用于表示跟丢，准备删除此对象
-		bool updateMask(const Mat &dmat, const vector<Mat> &fgMasks_, vector<bool> &mskUsedFlags){
-			//【放弃】
-// 			uchar currMcDepth = _dmat.at<ushort>(_currCenter),
-// 				newMcDepth = dmat.at<ushort>(_currCenter);
-// 
-// 			//若质心位置恰好为无效点， 标记跟丢：
-// 			if (currMcDepth == 0 || newMcDepth == 0)
-// 				return false;
-			
-			//【放弃】若 _currCenter 在 fgMasks_ 某区域内：//？？
-			//改用前后帧白色区域求交：
-			size_t fgMskSize = fgMasks_.size();
-			bool foundNewMask = false;
-			for (size_t i = 0; i < fgMskSize; i++){
-				Mat fgMsk = fgMasks_[i];
-				//求交：
-				Mat currNewIntersect = _currMask & fgMsk;
-				int intersectArea = countNonZero(currNewIntersect != 0),
-					fgMskArea = countNonZero(fgMsk != 0);
-				double percent = 0.5;
+		bool updateDmatAndMask(const Mat &dmat, const vector<Mat> &fgMaskVec, vector<bool> &mskUsedFlags);
 
-				//2015年6月27日22:10:18
-				
-				if (mskUsedFlags[i] == false
-					//质心不可靠
-					//&& fgMsk.at<uchar>(_currCenter) == UCHAR_MAX){
-					//mask交集占比，也不可靠
-					//&& (intersectArea > _currMaskArea * percent 
-					//	|| intersectArea > fgMskArea * percent)
+		Scalar getColor();
 
-					//2015年6月27日22:08:20， mask交集区域深度差均值
-					//【注】：intersectArea>0必要，否则 mean=0导致误判
-					&& intersectArea > 0 && mean(abs(_dmat - dmat), currNewIntersect)[0] < 55
-					){
+		Mat getCurrMask();
 
-// 					_prevMask = _currMask;
-// 					_prevCenter = _currCenter;
-// 
-// 					_currMask = fgMsk;
-// 					_currCenter = getContMassCenter(_currMask);
+		void setCurrMask(Mat newMask);//setCurrMask
 
-					setPrevMask(_currMask);
-					setCurrMask(fgMsk);
+		void setPrevMask(Mat newMask);//setPrevMask
 
-					foundNewMask = true;
-					//标记某mask已被用过：
-					mskUsedFlags[i] = true;
-					
-					break;
-				}
-			}
+		int getHumId();
 
-			//【放弃】
-// 			//万一质心位置恰好为无效点怎么办？【未解决】，应该标记为丢失
-// 			int depthDiff = abs((int)_dmat.at<ushort>(_currCenter)-(int)dmat.at<ushort>(_currCenter));
-// 
-// 			//若因人体静止， _currCenter 不在 fgMasks_任何区域内（可能空），
-// 			//但 _currCenter 位置前后帧深度差异微小(<200mm)，则以此为种子点重新增长一个区域：
-// 			if (!foundNewMask 
-// 				//&& (_dmat.at<ushort>(_currCenter) == 0 || depthDiff < 200))
-// 				&& depthDiff < 200)
-// 			{
-// 
-// 				_prevMask = _currMask;
-// 				_prevCenter = _currCenter;
-// 
-// 				bool debugDraw = false;
-// 				//Mat flrApartMsk = getFloorApartMask(dmat, debugDraw);
-// 				Mat flrApartMsk = fetchFloorApartMask(dmat, debugDraw);
-// 				int rgThresh = 55;
-// 				_currMask = _simpleRegionGrow(dmat, _currCenter, rgThresh, flrApartMsk, debugDraw);
-// 				_currCenter = getContMassCenter(_currMask);
-// 			}
+#ifdef CV_VERSION_EPOCH
+		//用内部 _dmat, _currMask 做预测
+		void calcSkeleton();
+#endif //CV_VERSION_EPOCH
 
-			//若因 fgMasks_重叠度太低未找到，则：
-			if (!foundNewMask){
-				return false;
-				//不在这里增长! trackingNoMove... 已经处理过了！
-// 				//取： mask & 新一帧非零区域
-// 				Mat tmp_msk = _currMask & (dmat != 0);
-// 				//以及新旧帧微小变化求交：
-// 				tmp_msk &= (abs(dmat - _dmat) < 100);
-// 				//作为新的增长候选区域：
-// 				bool debugDraw_ = false;
-// 				Mat flrApartMsk = fetchFloorApartMask(dmat, debugDraw_);
-// 				int rgThresh = 550;
-// 
-// 				Mat sdPts;
-// 				cv::findNonZero(tmp_msk, sdPts);
-// 				if (sdPts.empty()){
-// 					cout << "sdPts.empty()" << endl;
-// 					//return false;
-// 				}
-// 				else{
-// 					Mat newMask = _simpleRegionGrow(dmat, sdPts.at<Point>(0), rgThresh, flrApartMsk, debugDraw_);
-// 
-// 					setCurrMask(newMask);
-// 				}
-			}
-			//深度图更新：
-			_dmat = dmat;
-
-
-// 			//类似 distMap2contours 的bbox 判定过滤：
-// 			//1. 不能太厚！
-// 			double dmin, dmax;
-// 			minMaxLoc(dmat, &dmin, &dmax, nullptr, nullptr, _currMask);
-// 			if (dmax - dmin > 1500)
-// 				return false;
-// 
-// 			vector<vector<Point> > contours;
-// 			findContours(_currMask.clone(), contours, RETR_EXTERNAL, CHAIN_APPROX_NONE);
-// 
-// 			//CV_Assert(contours.size() > 0); //有些时候就是找不到，【未解决，fake】
-// 			//fake:
-// 			contours.push_back(vector<Point>());
-// 
-// 			Rect bbox = boundingRect(contours[0]);
-// 			//2. bbox高度不能太小; 3. bbox 下沿不能高于半屏，因为人脚部位置较低
-// 			if (bbox.height < 80
-// 				|| bbox.br().y < dmat.rows / 2)
-// 				return false;
-
-
-			return true;
-		}//updateMask
-
-		Scalar getColor(){
-			return _humColor;
-		}
-
-		Mat getCurrMask(){
-			return _currMask;
-		}//getCurrMask
-
-		void setCurrMask(Mat newMask){
-			_currMask = newMask;
-			_currCenter = getContMassCenter(_currMask);
-			_currMaskArea = countNonZero(_currMask != 0);
-		}//setCurrMask
-
-		void setPrevMask(Mat newMask){
-			_prevMask = newMask;
-			_prevCenter = getContMassCenter(_prevMask);
-		}//setPrevMask
+		CapgSkeleton getSkeleton();
 
 		//---------------
-
 
 	protected:
 	private:
@@ -412,7 +267,13 @@ namespace zc{
 		int _currMaskArea;
 		Point _currCenter;
 
-		Scalar _humColor;
+		Scalar _humColor; //颜色不能作为id，无法确保唯一性
+		//此对象唯一id序号，从资源池中取、放
+		int _humId;
+		//vec-heap 做资源池
+		//static vector<int> idResPool;
+		
+		CapgSkeleton _sklt;
 
 		Point getContMassCenter(vector<Point> cont_){
 			//Point3i mc;
@@ -463,6 +324,12 @@ namespace zc{
 	void setPrevDmat(Mat currDmat);
 	void initPrevDmat(Mat currDmat);
 	Mat getPrevDmat();
+
+	//@param fgMsk: 前景蒙板， 白色(uchar_max)为有效区域
+	CapgSkeleton calcSkeleton(const Mat &dmat, const Mat &fgMsk);
+
+
+
 
 	//region-grow 后处理： 
 	// 1. 找不到种子点，进而增长失败的情况； 

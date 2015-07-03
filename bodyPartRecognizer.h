@@ -2,6 +2,7 @@
 #define __bodyPartRecognizer_h_
 
 #include "opencv2/opencv.hpp"
+//#if 1
 #ifdef CV_VERSION_EPOCH //2.4.x major is '4', use EPOCH instead
 //#if CV_VERSION_MAJOR < 3
 //lincccc's code below:
