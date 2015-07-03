@@ -331,10 +331,6 @@ namespace zc{
 
 
 
-	//region-grow 后处理： 
-	// 1. 找不到种子点，进而增长失败的情况； 
-	// 2. 区域突变情况，沿用前一帧（类LowPass）【未完成】
-	Mat postRegionGrow(const Mat &flagMat, int xyThresh, int zThresh, bool debugDraw = false);
 
 }//namespace zc
 

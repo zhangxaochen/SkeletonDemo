@@ -2327,7 +2327,7 @@ namespace zc{
 		res = roughFgMsks;
 		return res;
 	}//findFgMasksUseBGS
-#endif
+#endif //CV_VERSION_MAJOR >= 3
 
 
 	Mat seedNoMove(Mat dmat, /*Mat prevDmat, */Mat mask, int thresh /*= 50*/){
@@ -2675,15 +2675,6 @@ namespace zc{
 
 
 
-	cv::Mat postRegionGrow( const Mat &flagMat, int xyThresh, int zThresh, bool debugDraw /*= false*/ )
-	{
-		static Mat prevFlagMat;
-		//ÈôµÚÒ»Ö¡£º
-		if(prevFlagMat.empty()){
-			prevFlagMat = flagMat;
-		}
-		return flagMat;
-	}//postRegionGrow
 
 
 
