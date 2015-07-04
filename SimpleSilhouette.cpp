@@ -882,7 +882,8 @@ namespace zc{
 		morphologyEx(flrApartMsk, tmp, MORPH_CLOSE, morphKrnl);
 		flrApartMsk = tmp;
 
-		imshow("flrApartMsk", flrApartMsk);
+		if (debugDraw)
+			imshow("flrApartMsk", flrApartMsk);
 
 		//---------------3. 2015年7月5日01:56:01， 
 		//高度图截断方法
@@ -901,7 +902,9 @@ namespace zc{
 // 			minMaxLoc(hmap1, 0, &hmax, 0, 0, flrApartMsk == 0);
 // 			int flrHeight = hmax;
 			flrApartMsk = (hmap1 > flrHeight);
-			imshow("flrApartMsk.height-cut", flrApartMsk);
+
+			if (debugDraw)
+				imshow("flrApartMsk.height-cut", flrApartMsk);
 		}
 
 		return flrApartMsk;
