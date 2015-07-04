@@ -96,7 +96,11 @@ namespace sgf
 			show_topdown_view,show_topdown_binary;
 		
 		std::string name;
+#ifdef CV_VERSION_EPOCH
 		cv::BackgroundSubtractorMOG2 my_MOG;
+#elif CV_VERSION_MAJOR >= 3
+		//TODO: cv3
+#endif //CV_VERSION_EPOCH
 
 		cv::Mat background_depth;
 		cv::Mat difference_map;

@@ -38,7 +38,12 @@ segment::segment(bool _mode,bool _show,bool _debug,bool simpleMOG)
 
 	has_set_depth=false;
 
-	my_MOG=BackgroundSubtractorMOG2(200,20,false);
+#ifdef CV_VERSION_EPOCH
+	my_MOG = BackgroundSubtractorMOG2(200, 20, false);
+#elif CV_VERSION_MAJOR >= 3
+	//TODO: cv3
+#endif //CV_VERSION_EPOCH
+
 }
 
 void segment::set_mog_par(int history,int varthreshold,bool detect_shadow,int learningRate)
@@ -1195,7 +1200,12 @@ void segment::useMOG()
 	imshow("raw image",gray_map);waitKey(1);
 	//BackgroundSubtractorMOG2 bgMOG(10, 2, false );
 	Mat fg_depth;
-	my_MOG.operator()(gray_map,fg_depth,0.0005);
+#ifdef CV_VERSION_EPOCH
+	my_MOG.operator()(gray_map, fg_depth, 0.0005);
+#elif CV_VERSION_MAJOR >= 3
+	//TODO: cv3
+#endif //CV_VERSION_EPOCH
+
 	//bgMOG.operator()(gray_map,fg_depth);
 	Mat bg_depth;
 	//pMOG->getBackgroundImage(bg_depth);

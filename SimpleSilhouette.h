@@ -142,9 +142,15 @@ namespace zc{
 	//@Overload HumanFg-vec 版
 	void drawSkeletons(Mat &img, vector<HumanFg> &humObjVec, int skltIdx);
 
-
+	//@deprecated, no use
+	//@param contours 引用， 会被修改
 	void eraseNonHumanContours(vector<vector<Point> > &contours);
+
+	//@return cont.size() > 222;
 	bool isHumanContour(const vector<Point> &cont);
+
+	//目前仅通过蒙板前景像素点个数判断
+	//@return countNonZero(msk==UCHAR_MAX) > fgPxCntThresh
 	bool isHumanMask(const Mat &msk, int fgPxCntThresh = 1000);
 
 	//没用 normalize， 因为会导致不同帧灰度比不同；用 convertTo -> 1. * UCHAR_MAX / MAX_VALID_DEPTH
@@ -182,6 +188,8 @@ namespace zc{
 	//注：
 	// 1. 若 debugDraw = true, 则 _debug_mat 必须传实参
 	vector<Mat> findFgMasksUseBbox(Mat &dmat, /*bool usePre = false, */bool debugDraw = false, OutputArray _debug_mat = noArray());
+
+	vector<Mat> findFgMasksUseHeadAndBodyCont(Mat &dmat, bool debugDraw = false);
 
 	vector<Mat> trackingNoMove(Mat dmat, const vector<Mat> &prevFgMaskVec, const vector<Mat> &currFgMskVec, bool debugDraw = false);
 
@@ -314,9 +322,9 @@ namespace zc{
 	//假定origMasks里没有全黑mat，否则出错！
 	vector<Mat> bboxFilter(Mat dmat, const vector<Mat> &origMasks);
 
-	//假定 mask 不是全黑，否则出错！假定 mask中有唯一一个连通区域
-	bool bboxIsHuman(Mat dmat, Mat mask);
-// 	bool bboxIsHuman(Mat dmat, vector<Point> cont);
+	//假定 mask 不是全黑，否则出错！//错！[del]假定 mask中有唯一一个连通区域[/del]
+	bool fgMskIsHuman(Mat dmat, Mat mask);
+// 	bool fgMskIsHuman(Mat dmat, vector<Point> cont);
 
 	//radius: kernel size is (2*radius+1)^2
 	//shape: default MORPH_RECT

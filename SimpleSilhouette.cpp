@@ -197,12 +197,12 @@ namespace zc{
 	Mat fetchBgMskUseWallAndHeight(Mat dmat){
 		static Mat res;
 
-		//static Mat dmatOld;// = dmat.clone();
-		Mat dmatOld = getPrevDmat();
-		if (dmatOld.empty() || countNonZero(dmatOld != dmat) > 0)
+		static Mat dmatOld;// = dmat.clone();
+		//Mat dmatOld = getPrevDmat(); //×， 不是一帧循环中只用一次
+		if (dmatOld.empty() || countNonZero(dmatOld != dmat) > 0){
 			res = getBgMskUseWallAndHeight(dmat);// , debugDraw);
-
-		//dmatOld = dmat.clone();
+			dmatOld = dmat.clone();
+		}
 
 		return res;
 	}//fetchBgMskUseWallAndHeight
@@ -961,13 +961,13 @@ namespace zc{
 	Mat fetchFloorApartMask(Mat dmat, bool debugDraw /*= false*/){
 		static Mat res;
 
-		//static Mat dmatOld;// = dmat.clone();
-		Mat dmatOld = getPrevDmat();
+		static Mat dmatOld;// = dmat.clone();
+		//Mat dmatOld = getPrevDmat();
 
-		if (dmatOld.empty() || countNonZero(dmatOld != dmat) > 0)
+		if (dmatOld.empty() || countNonZero(dmatOld != dmat) > 0){
 			res = getFloorApartMask(dmat, debugDraw);
-
-		//dmatOld = dmat.clone();
+			dmatOld = dmat.clone();
+		}
 		
 		return res;
 	}//fetchFloorApartMask
@@ -1055,13 +1055,13 @@ namespace zc{
 	Mat fetchHeightMap(Mat dmat, bool debugDraw /*= false*/){
 		static Mat res;
 
-		//static Mat dmatOld;
-		Mat dmatOld = getPrevDmat();
+		static Mat dmatOld;
+		//Mat dmatOld = getPrevDmat();
 
-		if (dmatOld.empty() || countNonZero(dmatOld != dmat) > 0)
+		if (dmatOld.empty() || countNonZero(dmatOld != dmat) > 0){
 			res = calcHeightMap0(dmat, debugDraw);
-
-		//dmatOld = dmat.clone();
+			dmatOld = dmat.clone();
+		}
 
 		return res;
 	}//fetchHeightMap
@@ -1145,16 +1145,15 @@ namespace zc{
 	int fetchWallDepth(Mat &dmat){
 		static int res;
 
-		//static Mat dmatOld;
-		Mat dmatOld = getPrevDmat();
+		static Mat dmatOld;
+		//Mat dmatOld = getPrevDmat();
 
-		if (dmatOld.empty() || countNonZero(dmatOld != dmat) > 0)
+		if (dmatOld.empty() || countNonZero(dmatOld != dmat) > 0){
 			res = getWallDepth(dmat);
-
-		//dmatOld = dmat.clone();
+			dmatOld = dmat.clone();
+		}
 
 		return res;
-
 	}
 
 	void drawOneSkeleton(Mat &img, CapgSkeleton &sk){
@@ -1198,7 +1197,6 @@ namespace zc{
 		drawSkeletons(img, sklts, skltIdx);
 	}//drawSkeletons
 
-	//contours 引用， 会被修改
 	void eraseNonHumanContours(vector<vector<Point> > &contours){
 		vector<vector<Point> >::iterator it = contours.begin();
 		while(it != contours.end()){
@@ -1213,7 +1211,6 @@ namespace zc{
 		return cont.size() > 222;
 	}//isHumanContour
 
-	//目前仅通过蒙板前景像素点个数判断
 	bool isHumanMask(const Mat &msk, int fgPxCntThresh /*= 1000*/){
 		int fgPxCnt = countNonZero(msk==UCHAR_MAX);
 		cout<<"fgPxCnt: "<<fgPxCnt<<endl;
@@ -1230,16 +1227,15 @@ namespace zc{
 	Mat fetchDmatGrayscale(const Mat &dmat){
 		static Mat res;
 
-		//static Mat dmatOld;
-		Mat dmatOld = getPrevDmat();
+		static Mat dmatOld;
+		//Mat dmatOld = getPrevDmat();
 
 		if (dmatOld.empty() || countNonZero(dmatOld != dmat) > 0){
 			//dmat.convertTo(res, CV_8UC1, 1. * UCHAR_MAX / MAX_VALID_DEPTH);
-
 			res = getDmatGrayscale(dmat);
-		}
 
-		//dmatOld = dmat.clone();
+			dmatOld = dmat.clone();
+		}
 
 		return res;
 	}//fetchDmatGrayscale
@@ -1849,6 +1845,14 @@ namespace zc{
 		return resVec;
 	}//findFgMasksUseBbox
 
+
+	vector<Mat> findFgMasksUseHeadAndBodyCont(Mat &dmat, bool debugDraw /*= false*/){
+		vector<Mat> resVec;
+
+		return resVec;
+	}//findFgMasksUseHeadAndBodyCont
+
+
 	vector<Mat> trackingNoMove(Mat dmat, const vector<Mat> &prevFgMaskVec, const vector<Mat> &currFgMskVec, bool debugDraw /*= false*/){
 		//static vector<Mat> prevFgMaskVec; //缓存上一帧抠像结果
 
@@ -2005,7 +2009,7 @@ namespace zc{
 				drawContours(tmp, contours, i, 255, -1);
 				tmp &= mski;
 
-				if (bboxIsHuman(dmat, tmp)){
+				if (fgMskIsHuman(dmat, tmp)){
 					bool isExist = false;
 					size_t resSz = res.size();
 					for (size_t k = 0; k < resSz; k++){
@@ -2031,7 +2035,7 @@ namespace zc{
 // 					Rect intersectBbox = xzBboxVec[i] & xzBboxVec[j];
 // 					//若存在两XZ孤立区域，分离。暂时简单认为 i, j就是两个最大轮廓
 // 					if (intersectBbox.area() == 0){
-// 						//bboxIsHuman(dmat, )
+// 						//fgMskIsHuman(dmat, )
 // 					}
 // 				}
 // 			}
@@ -2092,7 +2096,7 @@ namespace zc{
 // 
 // 				size_t subMskVecSz = subMskVec.size();
 // 				for (size_t i = 0; i < subMskVecSz; i++){
-// 					if (bboxIsHuman(dmat, subMskVec[i]))
+// 					if (fgMskIsHuman(dmat, subMskVec[i]))
 // 						res.push_back(subMskVec[i]);
 // 				}
 
@@ -2139,7 +2143,7 @@ namespace zc{
 						}
 					}
 					
-					if (bboxIsHuman(dmat, newMskXY))
+					if (fgMskIsHuman(dmat, newMskXY))
 						res.push_back(newMskXY);
 				}
 			}//else-- contXZ_size > 1
@@ -2301,7 +2305,7 @@ namespace zc{
 		if (countNonZero(prevDmat != 0) == 0)
 			return sdVec;
 
-		Mat mskWhole = abs(dmat - getPrevDmat()) < thresh;
+		Mat mskWhole = abs(dmat - prevDmat) < thresh;
 		size_t sdVecSz = sdVec.size();
 		for (size_t i = 0; i < sdVecSz; i++){
 			Point sdi = sdVec[i];
@@ -2509,7 +2513,7 @@ namespace zc{
 				
 
 			//if (notTooThick && pxHeightEnough&& feetLowEnough)
-			if (bboxIsHuman(dmat, mski))
+			if (fgMskIsHuman(dmat, mski))
 			{
 				res.push_back(mski);
 			}
@@ -2517,17 +2521,18 @@ namespace zc{
 		return res;
 	}//bboxFilter
 
-	bool bboxIsHuman(Mat dmat, Mat mask){
+	bool fgMskIsHuman(Mat dmat, Mat mask){
 		double dmin, dmax;
 		minMaxLoc(dmat, &dmin, &dmax, nullptr, nullptr, mask);
 
-		vector<vector<Point> > contours;
-		findContours(mask.clone(), contours, RETR_EXTERNAL, CHAIN_APPROX_NONE);
-
-		CV_Assert(contours.size() > 0);
-// 		return bboxIsHuman(dmat, contours[0]);
-
-		Rect bbox = boundingRect(contours[0]);
+// 		vector<vector<Point> > contours;
+// 		findContours(mask.clone(), contours, RETR_EXTERNAL, CHAIN_APPROX_NONE);
+// 
+// 		CV_Assert(contours.size() > 0);
+// // 		return fgMskIsHuman(dmat, contours[0]);
+// 
+// 		Rect bbox = boundingRect(contours[0]);
+		Rect bbox = boundingRect(mask);
 
 		//类似 distMap2contours 的bbox 判定过滤：
 		//1. 不能太厚; 2. bbox高度不能太小; 3. bbox 下沿不能高于半屏，因为人脚部位置较低
@@ -2539,9 +2544,9 @@ namespace zc{
 		//2015年6月24日16:09:26： 
 		//暂时放弃 notTooThick 判定， 因其可能导致不稳定
 		return /*notTooThick && */pxHeightEnough && feetLowEnough;
-	}//bboxIsHuman
+	}//fgMskIsHuman
 
-// 	bool bboxIsHuman(Mat dmat, vector<Point> cont){
+// 	bool fgMskIsHuman(Mat dmat, vector<Point> cont){
 // 		Rect bbox = boundingRect(cont);
 // 
 // 		//类似 distMap2contours 的bbox 判定过滤：
@@ -2552,7 +2557,7 @@ namespace zc{
 // 
 // 		return notTooThick && pxHeightEnough && feetLowEnough;
 // 
-// 	}//bboxIsHuman
+// 	}//fgMskIsHuman
 
 	cv::Mat getMorphKrnl(int radius /*= 1*/, int shape /*= MORPH_RECT*/)
 	{
@@ -2621,7 +2626,7 @@ namespace zc{
 
 	vector<Point> seedHead(const Mat &dmat, bool debugDraw /*= false*/){
 		CV_Assert(my_seg != nullptr);
-
+		
 		return my_seg->seedSGF(dmat, debugDraw);
 	}
 
