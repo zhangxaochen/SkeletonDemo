@@ -50,7 +50,11 @@ namespace zc{
 	//注：
 	// 1. 若 debugDraw = true, 则 _debug_mat 必须传实参
 	// 2. 返回值 vector<vector<Point>> 实际就是挑选过的 contours
-	vector<vector<Point>> seedUseBbox(Mat dmat, bool debugDraw = false, OutputArray _debug_mat = noArray());
+	vector<vector<Point>> seedUseBboxXyXz(Mat dmat, bool debugDraw = false, OutputArray _debug_mat = noArray());
+
+	//用正视图+头部种子点联合判定人体轮廓位置，
+	//@return 正视图contours
+	vector<vector<Point>> seedUseHeadAndBodyCont(Mat dmat, bool debugDraw = false, OutputArray _debug_mat = noArray());
 
 	//@deprecated, 语义不明，弃用；其实包含两步：去背景 & findFgMasksUseBbox
 	//1. 找背景大墙面；
@@ -104,13 +108,16 @@ namespace zc{
 	//maskMat: type 8uc1, 白色 UCHAR_MAX 点表示有效点
 	vector<Point> maskMat2pts(Mat maskMat, int step = 1);
 
+	//若镜头倾斜俯视怎么办？
+	//@return 用于去除地板的mask
+	Mat getFloorApartMask(Mat dmat, Mat flrKrnl, int mskThresh, int morphRadius, bool debugDraw = false);
+
 	//三个默认参数(flrKrnl, mskThresh, morphRadius) 版：
 	//flrKrnl = { 1, 1, 1, -1, -1, -1 };
 	//mskThresh = 100;
 	//morphRadius = 3;
 	Mat getFloorApartMask(Mat dmat, bool debugDraw = false);
-	//返回：用于去除地板的mask
-	Mat getFloorApartMask(Mat dmat, Mat flrKrnl, int mskThresh, int morphRadius, bool debugDraw = false);
+
 
 	Mat fetchFloorApartMask(Mat dmat, bool debugDraw = false);
 
@@ -119,16 +126,19 @@ namespace zc{
 	Mat calcWidthMap(Mat dmat, int centerX = 0, bool debugDraw = false);
 	Mat fetchWidthMap(Mat dmat, int centerX = 0, bool debugDraw = false);
 
+	//计算物理尺度高度Mat：
+	//以mat下边缘为0高度，逐【行】越往上越高，同一行越深“高”越大，故错！
+	//不过暂时能用，实际用于条件过滤： (过高 || 过深)
 	cv::Mat calcHeightMap0(Mat dmat, bool debugDraw = false);
+	//与 calcHeightMap 区别在于： 不是每次算， 只有 dmat 内容变了，才更新
+	Mat fetchHeightMap0(Mat dmat, bool debugDraw = false);
 
 	//计算物理尺度高度Mat：
-	//以mat下边缘为0高度，越往上越高
+	//之前的实现错误，改为中轴线为0高度，最后统一偏移 +hmin
 	Mat calcHeightMap1(Mat dmat, bool debugDraw = false);
-	//与 calcHeightMap 区别在于： 不是每次算， 只有 dmat 内容变了，才更新
-	Mat fetchHeightMap(Mat dmat, bool debugDraw = false);
 
 	//截取物理尺度高度<limitMs(毫米)像素点做mask
-	Mat getHeightMask(Mat dmat, int limitMs = 2500);
+	Mat getFakeHeightMask(Mat dmat, int limitMs = 2500);
 
 	//直方图方式寻找大墙面深度值（大峰值）
 	//适用于正对墙面的用例
@@ -168,6 +178,13 @@ namespace zc{
 	// 1. 若 debugDraw = true, 则 _debug_mat 必须传实参
 	vector<vector<Point> > distMap2contours(const Mat &dmat, bool debugDraw = false, OutputArray _debug_mat = noArray());
 
+	//@todo 重构了distMap2contours，另外debugDraw彩色
+	//@return 正视图中 bboxIsHuman 的 contours
+	vector<vector<Point> > distMap2contours_new(const Mat &dmat, bool debugDraw = false, OutputArray _debug_mat = noArray());
+
+	//distMap2contours_new 的别名
+	extern vector<vector<Point> >(*getHumanContoursXY)(const Mat &, bool, OutputArray);
+
 	//@deprecated
 	Mat dmat2TopDownViewDebug(const Mat &dmat, bool debugDraw = false);
 
@@ -184,11 +201,13 @@ namespace zc{
 	//3. squash用了 convertTo，float值round，非floor；所以反投影小心
 	Mat dmat2tdview_core(const Mat &dmat, double ratio = 1. * UCHAR_MAX / MAX_VALID_DEPTH, bool debugDraw = false);
 
+	//@deprecated 因为仅等价于 seedUseBboxXyXz + simpleRegionGrow
 	//用正视图、俯视图两种 bbox 求交，判定人体轮廓位置
 	//注：
 	// 1. 若 debugDraw = true, 则 _debug_mat 必须传实参
 	vector<Mat> findFgMasksUseBbox(Mat &dmat, /*bool usePre = false, */bool debugDraw = false, OutputArray _debug_mat = noArray());
 
+	//@deprecated 未实现，因为将仅等价于 seedUseHeadAndBodyCont + simpleRegionGrow
 	vector<Mat> findFgMasksUseHeadAndBodyCont(Mat &dmat, bool debugDraw = false);
 
 	vector<Mat> trackingNoMove(Mat dmat, const vector<Mat> &prevFgMaskVec, const vector<Mat> &currFgMskVec, bool debugDraw = false);
@@ -319,12 +338,22 @@ namespace zc{
 
 	};//class HumanFg
 
+	//@deprecated
 	//假定origMasks里没有全黑mat，否则出错！
 	vector<Mat> bboxFilter(Mat dmat, const vector<Mat> &origMasks);
 
-	//假定 mask 不是全黑，否则出错！//错！[del]假定 mask中有唯一一个连通区域[/del]
+	//假定 mask 不是全黑，否则出错！mask中连通区域不必唯一
+	//用到 mask 说明必然用到深度信息, e.g., dmax-dmin < thresh
 	bool fgMskIsHuman(Mat dmat, Mat mask);
 // 	bool fgMskIsHuman(Mat dmat, vector<Point> cont);
+
+	//用cont，说明仅使用XY信息，无深度信息, e.g., bbox
+	//@return 目前等价于bboxIsHuman
+	bool contIsHuman(Size matSize, vector<Point> cont);
+
+	//仅使用XY信息，无深度信息, 
+	//@return pxHeightEnough && narrowEnough && feetLowEnough;
+	bool bboxIsHuman(Size matSize, Rect bbox);
 
 	//radius: kernel size is (2*radius+1)^2
 	//shape: default MORPH_RECT

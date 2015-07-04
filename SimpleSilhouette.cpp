@@ -13,6 +13,13 @@ const int mode = 01; //0当前， 1平均
 const int thickLimitDefault = 1500;
 int thickLimit = thickLimitDefault; //毫米
 
+//一些调试颜色：
+Scalar cwhite(255, 255, 255);
+Scalar cred(0, 0, 255);
+Scalar cgreen(0, 255, 0);
+Scalar cblue(255, 0, 0);
+Scalar cyellow(0, 255, 255);
+
 namespace zc{
 
 //from CKernal.cpp
@@ -168,7 +175,7 @@ namespace zc{
 		//若无大墙面， 背景较空旷， 用物理高度判定剔除(<2500mm)
 		//包括： wallDepth < 0 以及因人离相机太近(<1500mm)，身体被判定为墙面的情形
 		if (wallDepth < 3000){
-			Mat heightMsk = getHeightMask(dmat, 2500);
+			Mat heightMsk = getFakeHeightMask(dmat, 2500);
 			initBgMsk = (heightMsk == 0);
 
 			//2015年6月24日15:20:41：
@@ -850,7 +857,7 @@ namespace zc{
 		//cv::flip(flrKrnl, flrKrnl, 0);
 
 		int mskThresh = 1000;
-		int morphRadius = 1;
+		int morphRadius = 2;
 		return getFloorApartMask(dmat, flrKrnl, mskThresh, morphRadius, debugDraw);
 	}//getFloorApartMask
 
@@ -870,14 +877,36 @@ namespace zc{
 			row *= (1e-6*i*i*i);
 		}
 		flrApartMsk = abs(tmp) < mskThresh;
-		//黑or白色膨胀？open操作：
+		//白色膨胀？close操作：
+		//imshow("floor-height-factor-no-close", flrApartMsk);
 		morphologyEx(flrApartMsk, tmp, MORPH_CLOSE, morphKrnl);
 		flrApartMsk = tmp;
 
-		imshow("floor-height-factor", flrApartMsk);
+		imshow("flrApartMsk", flrApartMsk);
+
+		//---------------3. 2015年7月5日01:56:01， 
+		//高度图截断方法
+		int ww = dmat.cols,
+			hh = dmat.rows;
+		Rect bottomBorder(0, 9. / 10 * hh, ww, hh / 10);
+		//若屏幕底边缘大致黑色(>50%)，说明视野前方平地面积大：
+		if (countNonZero(flrApartMsk(bottomBorder) == 0) > ww*hh / 10 * 0.5){
+			Mat hmap1 = calcHeightMap1(dmat, false);
+			//均值上移10cm：
+			int flrHeight = cv::mean(hmap1, flrApartMsk == 0)[0];
+			flrHeight += 100;
+
+			//max 可能会导致过高截断
+// 			double hmax; 
+// 			minMaxLoc(hmap1, 0, &hmax, 0, 0, flrApartMsk == 0);
+// 			int flrHeight = hmax;
+			flrApartMsk = (hmap1 > flrHeight);
+			imshow("flrApartMsk.height-cut", flrApartMsk);
+		}
+
 		return flrApartMsk;
 
-		//---------------1. 2015年6月23日20:54:32， 之前版本，1/2, 3/4屏一刀切，不好
+#if 0	//---------------1. 2015年6月23日20:54:32， 之前版本，1/2, 3/4屏一刀切，不好
 		flrApartMsk = abs(flrApartMat)<mskThresh;
 // 		Mat flrApartMsk2 = abs(flrApartMat)<500 | abs(flrApartMat)>1000;
 		//上半屏不管，防止手部、肩部被误删过滤：
@@ -955,6 +984,7 @@ namespace zc{
 		}
 
 		return flrApartMsk;
+#endif
 	}//getFloorApartMask
 
 	//与 getFloorApartMask 区别在于： 不是每次算， 只有 dmat 内容变了，才更新
@@ -970,6 +1000,7 @@ namespace zc{
 		}
 		
 		return res;
+
 	}//fetchFloorApartMask
 
 
@@ -997,7 +1028,6 @@ namespace zc{
 		return res;
 	}//fetchWidthMap
 
-	//之前的错误实现，对比测试？
 	cv::Mat calcHeightMap0(Mat dmat, bool debugDraw /*= false*/)
 	{
 		Mat res = dmat.clone(); //保持 cv16uc1 应该没错；
@@ -1014,9 +1044,7 @@ namespace zc{
 		return res;
 	}//calcHeightMapWrong
 
-	//计算物理尺度高度Mat：
-	cv::Mat calcHeightMap1(Mat dmat, bool debugDraw /*= false*/)
-	{
+	Mat calcHeightMap1(Mat dmat, bool debugDraw /*= false*/){
 		//Mat res = dmat.clone(); //保持 cv16uc1 应该没错；错！
 		Mat res;
 		dmat.convertTo(res, CV_32S);
@@ -1037,22 +1065,26 @@ namespace zc{
 			drow = drow * (hh / 2 - i) / XTION_FOCAL_XY;
 		}
 
-		//hmin 这样算不好，会因为地面原点不精确导致不稳定
-		Mat flrMsk = (fetchFloorApartMask(dmat) == 0);
-		Mat morphKrnl = getMorphKrnl(3);
-		dilate(flrMsk, flrMsk, morphKrnl);
-
+		//hmin 这样算不好，会因为地面原点不精确导致不稳定，灰度闪烁
+		//2015年7月5日02:29:51， 不稳定暂没关系
 		double hmin, hmax;
-		minMaxLoc(res, &hmin, &hmax, 0, 0, flrMsk);
+		minMaxLoc(res, &hmin, &hmax);
 		res -= hmin;
+
+// 		Mat flrMsk = (fetchFloorApartMask(dmat) == 0);
+// 		Mat morphKrnl = getMorphKrnl(3);
+// 		dilate(flrMsk, flrMsk, morphKrnl);
+// 
+// 		double hmin, hmax;
+// 		minMaxLoc(res, &hmin, &hmax, 0, 0, flrMsk);
 
 		res.setTo(0, dmat == 0);
 
 		return res;
-	}//calcHeightMap
+	}//calcHeightMap1
 
 	//与 calcHeightMap 区别在于： 不是每次算， 只有 dmat 内容变了，才更新
-	Mat fetchHeightMap(Mat dmat, bool debugDraw /*= false*/){
+	Mat fetchHeightMap0(Mat dmat, bool debugDraw /*= false*/){
 		static Mat res;
 
 		static Mat dmatOld;
@@ -1064,11 +1096,11 @@ namespace zc{
 		}
 
 		return res;
-	}//fetchHeightMap
+	}//fetchHeightMap0
 
 	//截取物理尺度高度<limitMs(毫米)像素点做mask
-	Mat getHeightMask(Mat dmat, int limitMs /*= 2500*/){
-		Mat htMap = zc::fetchHeightMap(dmat);
+	Mat getFakeHeightMask(Mat dmat, int limitMs /*= 2500*/){
+		Mat htMap = zc::fetchHeightMap0(dmat); //用的 v0 假高度计算方法
 		//imshow("htMap", htMap);
 
 		//Mat htMap_show;
@@ -1079,7 +1111,7 @@ namespace zc{
 		//imshow("fgHeightMap", fgHeightMap);
 
 		return fgHeightMap;
-	}//getHeightMask
+	}//getFakeHeightMask
 
 	int getWallDepth(Mat &dmat){
 		double dmin, dmax;
@@ -1260,6 +1292,9 @@ namespace zc{
 			imshow("getHumanEdge.edge_ft", edge_ft);
 		}
 		edge_whole = edge_up + edge_ft;
+		if (debugDraw){
+			imshow("getHumanEdge.edge_whole", edge_whole);
+		}
 
 		return edge_whole;
 	}//getHumanEdge
@@ -1388,6 +1423,70 @@ namespace zc{
 		}
 			return cont_good;
 	}//distMap2contours
+
+	vector<vector<Point> >(*getHumanContoursXY)(const Mat &, bool, OutputArray) = distMap2contours_new;
+
+	vector<vector<Point> > distMap2contours_new(const Mat &dmat, bool debugDraw /*= false*/, OutputArray _debug_mat /*= noArray()*/){
+		Mat debug_mat;
+		if (debugDraw){
+			//调试mat改用彩色绘制：
+			_debug_mat.create(dmat.size(), CV_8UC3);
+			debug_mat = _debug_mat.getMat();
+			//debug_mat.setTo(0);
+			//dmat.convertTo(debug_mat, CV_8U, 1.*UCHAR_MAX / MAX_VALID_DEPTH);
+			Mat dmat_gray;
+			dmat.convertTo(dmat_gray, CV_8U, 1.*UCHAR_MAX / MAX_VALID_DEPTH);
+			vector<Mat> cn3(3, dmat_gray);
+			cv::merge(cn3, debug_mat);
+		}
+
+		Mat edge_whole, //上身+脚部，地面分离
+			edge_whole_inv, //黑色描边
+			bwImg //二值图，类比dist-map二值化，实际是canny+erode结果
+			;
+		edge_whole = getHumanEdge(dmat, debugDraw);
+		edge_whole_inv = (edge_whole == 0);
+		static int anch = 4;
+		static Mat morphKrnl = getStructuringElement(MORPH_RECT, Size(anch * 2 + 1, anch * 4 + 1), Point(anch, anch));
+		erode(edge_whole_inv, bwImg, morphKrnl); //res320*240, costs 0.07ms
+
+		//去掉无效区域：
+		bwImg &= (dmat != 0);
+
+		if (debugDraw){
+			debug_mat.setTo(cblue, bwImg == 0); //先画粗线
+			debug_mat.setTo(0, edge_whole); //细线
+		}
+
+		vector<vector<Point>> contours;
+		vector<vector<Point>> res;
+		
+		findContours(bwImg.clone(), contours, RETR_EXTERNAL, CV_CHAIN_APPROX_NONE);
+		size_t contSz = contours.size();
+		for (size_t i = 0; i < contSz; i++){
+			vector<Point> conti = contours[i];
+			Rect bbox = boundingRect(conti);
+
+			//if (contIsHuman(dmat.size(), conti)){
+			if (bboxIsHuman(dmat.size(), bbox)){
+				res.push_back(conti);
+
+				if (debugDraw){
+					rectangle(debug_mat, bbox, cwhite, 2);
+					drawContours(debug_mat, contours, i, cred, 2);
+					Moments mu = moments(conti);
+					Point mc(mu.m10 / mu.m00, mu.m01 / mu.m00);
+					circle(debug_mat, mc, 5, cred, 2);
+				}
+			}
+			else if (debugDraw){
+				//rectangle(debug_mat, bbox, 255, 1);
+				rectangle(debug_mat, bbox, cwhite, 1);
+			}
+		}
+
+		return res;
+	}//distMap2contours_new
 
 	//1. 对 distMap 二值化得到 contours； 2. 对 contours bbox 判断长宽比，得到人体区域
 	Mat distMap2contoursDebug(const Mat &dmat, bool debugDraw /*= false*/){
@@ -1694,7 +1793,7 @@ namespace zc{
 		return res;
 	}//dmat2TopDownViewDebug
 
-	vector<vector<Point>> seedUseBbox(Mat dmat, bool debugDraw /*= false*/, OutputArray _debug_mat /*= noArray()*/){
+	vector<vector<Point>> seedUseBboxXyXz(Mat dmat, bool debugDraw /*= false*/, OutputArray _debug_mat /*= noArray()*/){
 		vector<vector<Point>> res;
 
 		//各自粗选得到的“好”cont： 
@@ -1784,7 +1883,7 @@ namespace zc{
 		}//for(size_t i = 0; i < dtrans_cont_size; i++)
 
 		return res;
-	}//seedUseBbox
+	}//seedUseBboxXyXz
 
 	vector<Mat> findFgMasksUseBbox(Mat &dmat, /*bool usePre / *= false* /, */bool debugDraw /*= false*/, OutputArray _debug_mat /*= noArray()*/){
 	//vector<Mat> findHumanMasksUseBbox(Mat &dmat, bool debugDraw /*= false*/){
@@ -1792,14 +1891,14 @@ namespace zc{
 		vector<Mat> resVec;
 
 		clock_t begt = clock();
-		vector<vector<Point>> seedVov = seedUseBbox(dmat, debugDraw, _debug_mat);
+		vector<vector<Point>> seedVov = seedUseBboxXyXz(dmat, debugDraw, _debug_mat);
 
 		Mat dm_draw;// = dmat.clone();
 		if (debugDraw){
-			cout << "findFgMasksUseBbox.part1.seedUseBbox.ts: " << clock() - begt << endl;
+			cout << "findFgMasksUseBbox.part1.seedUseBboxXyXz.ts: " << clock() - begt << endl;
 			normalize(dmat, dm_draw, 0, UCHAR_MAX, NORM_MINMAX, CV_8UC1);
 			drawContours(dm_draw, seedVov, -1, 0, 3);
-			imshow("seedUseBbox", dm_draw);
+			imshow("seedUseBboxXyXz", dm_draw);
 		}
 
 		//测试去除不稳定点，尚不成熟。效果微弱，【舍弃】
@@ -1807,7 +1906,7 @@ namespace zc{
 // 
 // 		if (debugDraw){
 // 			drawContours(dm_draw, seedVov, -1, 255, 1);
-// 			imshow("seedUseBbox", dm_draw);
+// 			imshow("seedUseBboxXyXz", dm_draw);
 // 		}
 
 		size_t seedVecSize = seedVov.size();
@@ -1844,6 +1943,58 @@ namespace zc{
 
 		return resVec;
 	}//findFgMasksUseBbox
+
+
+	vector<vector<Point>> seedUseHeadAndBodyCont(Mat dmat, bool debugDraw /*= false*/, OutputArray _debug_mat /*= noArray()*/){
+		Mat debug_mat;
+		if (debugDraw){
+			_debug_mat.create(dmat.size(), CV_8UC1);
+			debug_mat = _debug_mat.getMat();
+			debug_mat.setTo(0);
+		}
+
+		vector<vector<Point>> res;
+		//候选人体轮廓：
+		vector<vector<Point>> humContours = getHumanContoursXY(dmat, false, noArray());
+		size_t humContoursSz = humContours.size();
+
+		//头部种子点（圆形模板匹配）：
+		vector<Point> sdHeadVec = seedHead(dmat, false);
+		size_t sdHeadVecSz = sdHeadVec.size();
+
+		for (size_t i = 0; i < humContoursSz; i++){
+			if (debugDraw){
+				drawContours(debug_mat, humContours, i, 255, 1);
+			}
+
+			//1. 方案一，轮廓质心 & 头部种子点 XZ距离. 2015年7月5日00:26:06
+			//这样基本仅在质心在身体上时有解
+			vector<Point> conti = humContours[i];
+			Moments mu = moments(conti);
+			Point mc_i(mu.m10 / mu.m00, mu.m01 / mu.m00);
+			ushort dep_mci = dmat.at<ushort>(mc_i);
+
+			for (size_t k = 0; k < sdHeadVecSz; k++){
+				Point sdHead_k = sdHeadVec[k];
+				ushort dep_sdHeadk = dmat.at<ushort>(sdHead_k);
+
+				if (abs(mc_i.x - sdHead_k.x) < 50
+					&& abs(dep_mci - dep_sdHeadk) < 500 //dZ < 50cm
+					&& mc_i.y > sdHead_k.y //头在上面, y小
+					){
+
+					if (debugDraw){
+						drawContours(debug_mat, humContours, i, 255, 2);
+						circle(debug_mat, mc_i, 5, 255, 2);
+					}
+					res.push_back(conti);
+					break;
+				}
+			}
+
+		}
+		return res;
+	}//seedUseHeadAndBodyCont
 
 
 	vector<Mat> findFgMasksUseHeadAndBodyCont(Mat &dmat, bool debugDraw /*= false*/){
@@ -2534,16 +2685,19 @@ namespace zc{
 // 		Rect bbox = boundingRect(contours[0]);
 		Rect bbox = boundingRect(mask);
 
-		//类似 distMap2contours 的bbox 判定过滤：
-		//1. 不能太厚; 2. bbox高度不能太小; 3. bbox 下沿不能高于半屏，因为人脚部位置较低
-		bool notTooThick = dmax - dmin < thickLimit,
-			pxHeightEnough = bbox.height >80,
-			feetLowEnough = bbox.br().y > dmat.rows / 2;
+// 		//类似 distMap2contours 的bbox 判定过滤：
+// 		//1. 不能太厚; 2. bbox高度不能太小; 3. bbox 下沿不能高于半屏，因为人脚部位置较低
+// 		bool notTooThick = dmax - dmin < thickLimit,
+// 			pxHeightEnough = bbox.height >80,
+// 			feetLowEnough = bbox.br().y > dmat.rows / 2;
+// 
+// 		//return notTooThick && pxHeightEnough && feetLowEnough;
+// 		//2015年6月24日16:09:26： 
+// 		//暂时放弃 notTooThick 判定， 因其可能导致不稳定
+// 		return /*notTooThick && */pxHeightEnough && feetLowEnough;
 
-		//return notTooThick && pxHeightEnough && feetLowEnough;
-		//2015年6月24日16:09:26： 
-		//暂时放弃 notTooThick 判定， 因其可能导致不稳定
-		return /*notTooThick && */pxHeightEnough && feetLowEnough;
+		//即，暂时：2015年7月4日22:48:08
+		return bboxIsHuman(dmat.size(), bbox);
 	}//fgMskIsHuman
 
 // 	bool fgMskIsHuman(Mat dmat, vector<Point> cont){
@@ -2558,6 +2712,21 @@ namespace zc{
 // 		return notTooThick && pxHeightEnough && feetLowEnough;
 // 
 // 	}//fgMskIsHuman
+
+	bool contIsHuman(Size matSize, vector<Point> cont){
+		Rect bbox = boundingRect(cont);
+		return bboxIsHuman(matSize, bbox);
+	}//contIsHuman
+
+
+	bool bboxIsHuman(Size matSize, Rect bbox){
+		bool pxHeightEnough = bbox.height > 80,
+			narrowEnough = bbox.height*1. / bbox.width > MIN_VALID_HW_RATIO,
+			feetLowEnough = bbox.br().y > matSize.height / 2;
+
+		return pxHeightEnough && narrowEnough && feetLowEnough;
+	}//bboxIsHuman
+
 
 	cv::Mat getMorphKrnl(int radius /*= 1*/, int shape /*= MORPH_RECT*/)
 	{
@@ -2627,7 +2796,8 @@ namespace zc{
 	vector<Point> seedHead(const Mat &dmat, bool debugDraw /*= false*/){
 		CV_Assert(my_seg != nullptr);
 		
-		return my_seg->seedSGF(dmat, debugDraw);
+		//return my_seg->seedSGF(dmat, debugDraw);
+		return my_seg->seed_method1(dmat, debugDraw);
 	}
 
 #pragma endregion //孙国飞头部种子点
