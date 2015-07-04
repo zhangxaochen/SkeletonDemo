@@ -1,3 +1,5 @@
+#ifndef _SGF_SEGMENT
+#define _SGF_SEGMENT
 #include <opencv2/opencv.hpp>
 #include <vector>
 #include "Holefilling.h"
@@ -20,7 +22,7 @@ namespace sgf
 // 			bool do_region_grow1=false,bool show_responses1=false,bool show_histogram1=false);
 // 		segment(bool show_result1=false,bool show_depth_without_bg1=false,
 // 			bool show_topdown_view1=false,bool show_topdown_binary1=false);
-		segment(bool _mode=0,bool _show=1,bool _debug=0,bool simpleMOG=0);
+		segment();
 		void set_depthMap(const cv::Mat&);
 		void set_mog_par(int history,int varthreshold,bool detect_shadow,int learningRate);
 
@@ -35,6 +37,8 @@ namespace sgf
 		void set_name(std::string);
 		void output(string);
 		std::vector<cv::Point> seedSGF(cv::Mat dmat,bool showResult=false,bool raw_seed=false,cv::Mat& depth_without_bg=cv::Mat());
+		std::vector<cv::Point> seed_method1(cv::Mat dmat,bool showResult=false,bool showTime=false);
+		std::vector<cv::Point> seed_method2(cv::Mat dmat,bool showResult=false,bool showTime=false);
 		bool read_config(const std::string &configPath);
 		int accurate;
 		std::string videoname;
@@ -147,3 +151,5 @@ namespace sgf
 		std::list<cv::Point2i> stack_list;
 	};
 }
+
+#endif //_SGE_SEGMENT

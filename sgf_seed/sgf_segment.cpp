@@ -29,12 +29,12 @@ using namespace cv;
 // 	show_topdown_binary=show_topdown_binary1;
 // }
 
-segment::segment(bool _mode,bool _show,bool _debug,bool simpleMOG)
+segment::segment()
 {
-	_SGF_MODE=_mode;
-	_SGF_DEBUG=_debug;
-	_SGF_SHOW=_show;
-	_MOG=simpleMOG;
+	_SGF_MODE=1;
+	_SGF_DEBUG=1;
+	_SGF_SHOW=1;
+	_MOG=1;
 
 	has_set_depth=false;
 
@@ -200,6 +200,61 @@ Mat segment::get_result()
 }Mat segment::get_result3()
 {
 	return interest_point2.clone();
+}
+vector<Point> segment::seed_method1(cv::Mat dmat,bool showResult/* =false */,bool showTime/*=false*/) //¿˚”√ƒ£∞Â∆•≈‰
+{
+	set_depthMap(dmat);
+	int begin=clock();
+
+	compute_edge(threshold_depth_min,threshold_depth_max);
+	threshold(edge_map_thresh,edge_map_thresh,128,255,THRESH_BINARY_INV);
+
+	compute_distanceMap_2D();
+	equalizeHist(distance_map_uchar,distance_map_uchar);
+	compute_subsamples();
+	compute_response();
+	region_of_interest.clear();
+	region_of_interest_raw.clear();
+	interest_point=edge_map_thresh.clone();
+	interest_point_raw=edge_map_thresh.clone();
+	interest_point2=edge_map_thresh.clone();
+	find_and_draw_countours();
+	choose_and_draw_interest_region();
+	if (showTime)
+	{
+		cout<<"time spend:"<<clock()-begin<<endl;
+	}
+	if (showResult)
+	{
+		display();
+	}
+	return headpoints_location;
+}
+vector<Point> segment::seed_method2(cv::Mat dmat,bool showResult/* =false */,bool showTime/* =false */)
+{
+	set_depthMap(dmat);
+	int begin=clock();
+	compute_hist();
+	compute_height();
+	seperate_foot_and_ground();
+	sjbh();
+	compute_cost();
+	if (showTime)
+	{
+		cout<<"time spend:"<<clock()-begin<<endl;
+	}
+	if (showResult)
+	{
+		imshow("result",gray_clone);
+		waitKey(1);
+		imshow("depth without bg mask",depth_mask);
+		waitKey(1);
+		imshow("top down view",depth_sjbh);
+		waitKey(1);
+		imshow("top down view binary",sjbh_binary);
+		waitKey(1);
+	}
+		return get_seed();
 }
 vector<Point> segment::seedSGF(Mat dmat,bool showResult,bool seed_raw,Mat& depth_without_bg)
 {
