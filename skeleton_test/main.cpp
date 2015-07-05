@@ -177,12 +177,13 @@ void main(int argc, char **argv){
 	xn::DepthMetaData depthMD;
 
 	XnMapOutputMode mapMode;
-	mapMode.nXRes = QVGA_WIDTH;
-	mapMode.nYRes = QVGA_HEIGHT;
-	mapMode.nFPS = 30;
-	rc = dg.SetMapOutputMode(mapMode);
-	if(!checkOpenNIError(rc, "dg.SetMapOutputMode"))
-		dg.GetMapOutputMode(mapMode);
+// 	mapMode.nXRes = QVGA_WIDTH;
+// 	mapMode.nYRes = QVGA_HEIGHT;
+// 	mapMode.nFPS = 30;
+// 	rc = dg.SetMapOutputMode(mapMode);
+// 	if(!checkOpenNIError(rc, "dg.SetMapOutputMode"))
+// 		dg.GetMapOutputMode(mapMode);
+	dg.GetMapOutputMode(mapMode);
 	
 	zoomFactor = 1. * QVGA_WIDTH / mapMode.nXRes;
 
@@ -551,6 +552,21 @@ void main(int argc, char **argv){
 #endif // CAPG_SKEL_VERSION_0_1
 
 #ifdef CAPG_SKEL_VERSION_0_9 //对应 ZC_CLEAN
+#pragma region //一些测试
+		//---------------测试高度计算
+		Mat htMap0 = zc::calcHeightMap0(dmat);
+		Mat htMap = zc::calcHeightMap1(dmat);
+		if (ZC_DEBUG_LV1){
+			Mat htMap0_show, htMap_show;
+			int maxHt = 3e3;
+			htMap0.convertTo(htMap0_show, CV_8U, 1.* UCHAR_MAX / maxHt);
+			htMap.convertTo(htMap_show, CV_8U, 1.* UCHAR_MAX / maxHt);
+			imshow("htMap0_show", htMap0_show);
+			imshow("htMap_show", htMap_show);
+		}
+
+#pragma endregion //一些测试
+
 		clock_t begttotal = clock();
 
 		//必须：初始化prevDmat
@@ -573,17 +589,6 @@ void main(int argc, char **argv){
 			imshow("atmp-maskedDmat", maskedDmat_show);
 		}
 
-		//---------------测试高度计算
-		Mat htMap0 = zc::calcHeightMap0(dmat);
-		Mat htMap = zc::calcHeightMap1(dmat);
-		if (ZC_DEBUG_LV1){
-			Mat htMap0_show, htMap_show;
-			int maxHt = 3e3;
-			htMap0.convertTo(htMap0_show, CV_8U, 1.* UCHAR_MAX / maxHt);
-			htMap.convertTo(htMap_show, CV_8U, 1.* UCHAR_MAX / maxHt);
-			imshow("htMap0_show", htMap0_show);
-			imshow("htMap_show", htMap_show);
-		}
 
 		//B.初步找前景，初始化，此处用的bbox方法：
 		begt = clock();

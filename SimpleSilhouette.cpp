@@ -48,6 +48,56 @@ namespace zc{
 	}
 #endif //CV_VERSION_EPOCH
 
+	const char *matNodeName = "mat";
+	const char *matVecName = "mat_vec";
+
+	void saveVideo(const vector<Mat> &matVec, const char *fname){
+		FileStorage fstorage(fname, FileStorage::WRITE);
+
+		fstorage << matVecName << "[";
+
+		size_t mvecSz = matVec.size();
+		for (size_t i = 0; i < mvecSz; i++){
+			//fstorage << matNodeName << matVec[i];
+			fstorage << matVec[i];
+		}
+		fstorage << "]";
+
+		fstorage.release();
+	}//saveVideo
+
+	vector<Mat> loadVideo(const char *fname){
+		cout << "loadVideo(): " << endl;
+		vector<Mat> res;
+		//文件中有多个同名key，写可以，读报错：CV_PARSE_ERROR( "Duplicated key" );
+		//使用SEQ "[]"存 vector：
+		FileStorage fstorage(fname, FileStorage::READ);
+		cout << "loadVideo.fstorage" << endl;
+		FileNode matVecNode = fstorage[matVecName];
+		cout << "matVecNode" << endl;
+		if (matVecNode.type() != FileNode::SEQ){
+			cerr << "NODE: '" << matVecName << "' is not a sequence! FAIL" << endl;
+			return res;
+		}
+
+		FileNodeIterator it = matVecNode.begin(),
+			it_end = matVecNode.end();
+
+		//for (; it != it_end; it++){
+		while (it != it_end){
+			//res.push_back((Mat)(*it)); //没法类型转换
+			Mat m;
+			it >> m; //>>自带++it, 所以不要手动++
+			res.push_back(m);
+		}
+
+		// 	while (1){
+		// 		Mat m;
+		// 		fstorage[matNodeName] >> m;
+		// 	}
+		return res;
+	}//loadVideo
+
 	// COCiter == Container of Containers Iterator
 	// Oiter == Output Iterator
 	template <class COCiter, class Oiter>
@@ -957,9 +1007,9 @@ namespace zc{
 // 		size_t contSz = contours.size();
 // 		Rect bbox_whole;
 // 		if(contSz){
-// 			bbox_whole = boundingRect(contours[0]);
+// 			bbox_whole = zc::boundingRect(contours[0]);
 // 			for(size_t i = 1; i < contSz; i++){
-// 				bbox_whole |= boundingRect(contours[i]);
+// 				bbox_whole |= zc::boundingRect(contours[i]);
 // 			}
 // 			int pt_y = bbox_whole.y+bbox_whole.height/2;
 // 			flrApartMsk(Rect(0, pt_y, dmat.cols, dmat.rows - pt_y)).setTo(0);
@@ -1395,7 +1445,7 @@ namespace zc{
 
 			ushort dep_mc = dmat.at<ushort>(mc);
 
-			Rect boundRect = boundingRect(contours[i]);
+			Rect boundRect = zc::boundingRect(contours[i]);
 			Size bsz = boundRect.size();
 
 			//测试过滤条件： 1. bbox 长宽比; 2. bbox 高度; 
@@ -1468,7 +1518,7 @@ namespace zc{
 		size_t contSz = contours.size();
 		for (size_t i = 0; i < contSz; i++){
 			vector<Point> conti = contours[i];
-			Rect bbox = boundingRect(conti);
+			Rect bbox = zc::boundingRect(conti);
 
 			//if (contIsHuman(dmat.size(), conti)){
 			if (bboxIsHuman(dmat.size(), bbox)){
@@ -1602,8 +1652,8 @@ namespace zc{
 				mc = Point(mu.m10/mu.m00, mu.m01/mu.m00);
 			ushort dep_mc = dmat.at<ushort>(mc);
 
-			Rect boundRect = boundingRect(contours[i]);
-			//boundRect[i] = boundingRect(contours[i]);
+			Rect boundRect = zc::boundingRect(contours[i]);
+			//boundRect[i] = zc::boundingRect(contours[i]);
 			Size bsz = boundRect.size();
 			if(bsz.height*1./bsz.width > MIN_VALID_HW_RATIO && bsz.height > 80){
 				cout<<"mc; dep_mc, width, height; dep_mc*w, dep_mc*h: "<<mc<<"; "
@@ -1705,7 +1755,7 @@ namespace zc{
 		findContours(tdview.clone(), tdvContours, tdvHierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_NONE);
 		size_t tdvContSize = tdvContours.size();
 		for(size_t i = 0; i < tdvContSize; i++){
-			Rect boundRect = boundingRect(tdvContours[i]);
+			Rect boundRect = zc::boundingRect(tdvContours[i]);
 
 			if(debugDraw)
 				drawContours(debug_mat, tdvContours, i, 255, -1);
@@ -1821,7 +1871,7 @@ namespace zc{
 
 		//得到 tdv_cont 对应 bboxs
 		for (size_t i = 0; i < tdv_cont_good_size; i++){
-			tdvBboxs[i] = boundingRect(tdv_cont_good[i]);
+			tdvBboxs[i] = zc::boundingRect(tdv_cont_good[i]);
 		}
 
 		Mat flrApartMsk = getFloorApartMask(dmat, debugDraw);
@@ -1836,7 +1886,7 @@ namespace zc{
 			minMaxLoc(dmat, &dmin, &dmax, nullptr, nullptr, cont_mask & dmat != 0);
 
 			//缩放比 MAX_VALID_DEPTH / UCHAR_MAX，画到 top-down-view:
-			Rect bbox_dtrans_cont = boundingRect(dtrans_cont_good[i]);
+			Rect bbox_dtrans_cont = zc::boundingRect(dtrans_cont_good[i]);
 			double ratio = 1. * UCHAR_MAX / MAX_VALID_DEPTH;
 			Rect bbox_dtrans_cont_to_tdview(
 				bbox_dtrans_cont.x, dmin * ratio,
@@ -2269,7 +2319,7 @@ namespace zc{
 					drawContours(cmskXZ_i, contoursXZ, i, 255, -1);
 
 					//左右边界：
-					Rect bboxXZi = boundingRect(contXZi);
+					Rect bboxXZi = zc::boundingRect(contXZi);
 					int left = bboxXZi.x,
 						right = bboxXZi.x + bboxXZi.width - 1;//【注意】 -1
 
@@ -2282,7 +2332,7 @@ namespace zc{
 						vector<Point> nonZeroPts;
 						if(countNonZero(colXZ_k))
 							findNonZero(colXZ_k, nonZeroPts);
-						Rect bboxCol_k = boundingRect(nonZeroPts);
+						Rect bboxCol_k = zc::boundingRect(nonZeroPts);
 						int dmin = (bboxCol_k.y - 0.5) * rgThresh,
 							dmax = (bboxCol_k.br().y + 0.5) * rgThresh - 1; //【注意】 +0.5, -1
 						
@@ -2326,7 +2376,7 @@ namespace zc{
 // 			if (ptx < xmin)
 // 				xmin = ptx;
 // 		}
-		Rect xyBbox = boundingRect(conti);
+		Rect xyBbox = zc::boundingRect(conti);
 		
 		return Rect(xyBbox.x, dmin, xyBbox.width, dmax - dmin);
 	}//contour2XZbbox
@@ -2652,7 +2702,7 @@ namespace zc{
 // 			findContours(mski.clone(), contours, RETR_EXTERNAL, CHAIN_APPROX_NONE);
 // 
 // 			CV_Assert(contours.size() > 0);
-// 			Rect bbox = boundingRect(contours[0]);
+// 			Rect bbox = zc::boundingRect(contours[0]);
 // 
 // 			//类似 distMap2contours 的bbox 判定过滤：
 // 			//1. 不能太厚; 2. bbox高度不能太小; 3. bbox 下沿不能高于半屏，因为人脚部位置较低
@@ -2685,8 +2735,8 @@ namespace zc{
 // 		CV_Assert(contours.size() > 0);
 // // 		return fgMskIsHuman(dmat, contours[0]);
 // 
-// 		Rect bbox = boundingRect(contours[0]);
-		Rect bbox = boundingRect(mask);
+// 		Rect bbox = zc::boundingRect(contours[0]);
+		Rect bbox = zc::boundingRect(mask);
 
 // 		//类似 distMap2contours 的bbox 判定过滤：
 // 		//1. 不能太厚; 2. bbox高度不能太小; 3. bbox 下沿不能高于半屏，因为人脚部位置较低
@@ -2704,7 +2754,7 @@ namespace zc{
 	}//fgMskIsHuman
 
 // 	bool fgMskIsHuman(Mat dmat, vector<Point> cont){
-// 		Rect bbox = boundingRect(cont);
+// 		Rect bbox = zc::boundingRect(cont);
 // 
 // 		//类似 distMap2contours 的bbox 判定过滤：
 // 		//1. 不能太厚; 2. bbox高度不能太小; 3. bbox 下沿不能高于半屏，因为人脚部位置较低
@@ -2717,7 +2767,7 @@ namespace zc{
 // 	}//fgMskIsHuman
 
 	bool contIsHuman(Size matSize, vector<Point> cont){
-		Rect bbox = boundingRect(cont);
+		Rect bbox = zc::boundingRect(cont);
 		return bboxIsHuman(matSize, bbox);
 	}//contIsHuman
 
@@ -2923,4 +2973,233 @@ namespace zc{
 
 #pragma endregion //---------------HumanFg 成员函数们：
 
+#pragma region //从 opencv300 拷贝 zc::boundingRect 
+	//cv300 zc::boundingRect 可接受mask-mat
+	//D:\opencv300\sources\modules\imgproc\src\shapedescr.cpp L479
+#define  CV_TOGGLE_FLT(x) ((x)^((int)(x) < 0 ? 0x7fffffff : 0))
+
+
+	// Calculates bounding rectagnle of a point set or retrieves already calculated
+	static Rect pointSetBoundingRect(const Mat& points)
+	{
+		int npoints = points.checkVector(2);
+		int depth = points.depth();
+		CV_Assert(npoints >= 0 && (depth == CV_32F || depth == CV_32S));
+
+		int  xmin = 0, ymin = 0, xmax = -1, ymax = -1, i;
+		bool is_float = depth == CV_32F;
+
+		if (npoints == 0)
+			return Rect();
+
+		const Point* pts = points.ptr<Point>();
+		Point pt = pts[0];
+
+#if CV_SSE4_2
+		if (cv::checkHardwareSupport(CV_CPU_SSE4_2))
+		{
+			if (!is_float)
+			{
+				__m128i minval, maxval;
+				minval = maxval = _mm_loadl_epi64((const __m128i*)(&pt)); //min[0]=pt.x, min[1]=pt.y
+
+				for (i = 1; i < npoints; i++)
+				{
+					__m128i ptXY = _mm_loadl_epi64((const __m128i*)&pts[i]);
+					minval = _mm_min_epi32(ptXY, minval);
+					maxval = _mm_max_epi32(ptXY, maxval);
+				}
+				xmin = _mm_cvtsi128_si32(minval);
+				ymin = _mm_cvtsi128_si32(_mm_srli_si128(minval, 4));
+				xmax = _mm_cvtsi128_si32(maxval);
+				ymax = _mm_cvtsi128_si32(_mm_srli_si128(maxval, 4));
+			}
+			else
+			{
+				__m128 minvalf, maxvalf, z = _mm_setzero_ps(), ptXY = _mm_setzero_ps();
+				minvalf = maxvalf = _mm_loadl_pi(z, (const __m64*)(&pt));
+
+				for (i = 1; i < npoints; i++)
+				{
+					ptXY = _mm_loadl_pi(ptXY, (const __m64*)&pts[i]);
+
+					minvalf = _mm_min_ps(minvalf, ptXY);
+					maxvalf = _mm_max_ps(maxvalf, ptXY);
+				}
+
+				float xyminf[2], xymaxf[2];
+				_mm_storel_pi((__m64*)xyminf, minvalf);
+				_mm_storel_pi((__m64*)xymaxf, maxvalf);
+				xmin = cvFloor(xyminf[0]);
+				ymin = cvFloor(xyminf[1]);
+				xmax = cvFloor(xymaxf[0]);
+				ymax = cvFloor(xymaxf[1]);
+			}
+		}
+		else
+#endif
+		{
+			if (!is_float)
+			{
+				xmin = xmax = pt.x;
+				ymin = ymax = pt.y;
+
+				for (i = 1; i < npoints; i++)
+				{
+					pt = pts[i];
+
+					if (xmin > pt.x)
+						xmin = pt.x;
+
+					if (xmax < pt.x)
+						xmax = pt.x;
+
+					if (ymin > pt.y)
+						ymin = pt.y;
+
+					if (ymax < pt.y)
+						ymax = pt.y;
+				}
+			}
+			else
+			{
+				Cv32suf v;
+				// init values
+				xmin = xmax = CV_TOGGLE_FLT(pt.x);
+				ymin = ymax = CV_TOGGLE_FLT(pt.y);
+
+				for (i = 1; i < npoints; i++)
+				{
+					pt = pts[i];
+					pt.x = CV_TOGGLE_FLT(pt.x);
+					pt.y = CV_TOGGLE_FLT(pt.y);
+
+					if (xmin > pt.x)
+						xmin = pt.x;
+
+					if (xmax < pt.x)
+						xmax = pt.x;
+
+					if (ymin > pt.y)
+						ymin = pt.y;
+
+					if (ymax < pt.y)
+						ymax = pt.y;
+				}
+
+				v.i = CV_TOGGLE_FLT(xmin); xmin = cvFloor(v.f);
+				v.i = CV_TOGGLE_FLT(ymin); ymin = cvFloor(v.f);
+				// because right and bottom sides of the bounding rectangle are not inclusive
+				// (note +1 in width and height calculation below), cvFloor is used here instead of cvCeil
+				v.i = CV_TOGGLE_FLT(xmax); xmax = cvFloor(v.f);
+				v.i = CV_TOGGLE_FLT(ymax); ymax = cvFloor(v.f);
+			}
+		}
+
+		return Rect(xmin, ymin, xmax - xmin + 1, ymax - ymin + 1);
+	}
+
+
+	static Rect maskBoundingRect(const Mat& img)
+	{
+		CV_Assert(img.depth() <= CV_8S && img.channels() == 1);
+
+		Size size = img.size();
+		int xmin = size.width, ymin = -1, xmax = -1, ymax = -1, i, j, k;
+
+		for (i = 0; i < size.height; i++)
+		{
+			const uchar* _ptr = img.ptr(i);
+			const uchar* ptr = (const uchar*)alignPtr(_ptr, 4);
+			int have_nz = 0, k_min, offset = (int)(ptr - _ptr);
+			j = 0;
+			offset = MIN(offset, size.width);
+			for (; j < offset; j++)
+				if (_ptr[j])
+				{
+				have_nz = 1;
+				break;
+				}
+			if (j < offset)
+			{
+				if (j < xmin)
+					xmin = j;
+				if (j > xmax)
+					xmax = j;
+			}
+			if (offset < size.width)
+			{
+				xmin -= offset;
+				xmax -= offset;
+				size.width -= offset;
+				j = 0;
+				for (; j <= xmin - 4; j += 4)
+					if (*((int*)(ptr + j)))
+						break;
+				for (; j < xmin; j++)
+					if (ptr[j])
+					{
+					xmin = j;
+					if (j > xmax)
+						xmax = j;
+					have_nz = 1;
+					break;
+					}
+				k_min = MAX(j - 1, xmax);
+				k = size.width - 1;
+				for (; k > k_min && (k & 3) != 3; k--)
+					if (ptr[k])
+						break;
+				if (k > k_min && (k & 3) == 3)
+				{
+					for (; k > k_min + 3; k -= 4)
+						if (*((int*)(ptr + k - 3)))
+							break;
+				}
+				for (; k > k_min; k--)
+					if (ptr[k])
+					{
+					xmax = k;
+					have_nz = 1;
+					break;
+					}
+				if (!have_nz)
+				{
+					j &= ~3;
+					for (; j <= k - 3; j += 4)
+						if (*((int*)(ptr + j)))
+							break;
+					for (; j <= k; j++)
+						if (ptr[j])
+						{
+						have_nz = 1;
+						break;
+						}
+				}
+				xmin += offset;
+				xmax += offset;
+				size.width += offset;
+			}
+			if (have_nz)
+			{
+				if (ymin < 0)
+					ymin = i;
+				ymax = i;
+			}
+		}
+
+		if (xmin >= size.width)
+			xmin = ymin = 0;
+		return Rect(xmin, ymin, xmax - xmin + 1, ymax - ymin + 1);
+	}
+
+	cv::Rect zc::boundingRect(InputArray array)
+	{
+		Mat m = array.getMat();
+		return m.depth() <= CV_8U ? maskBoundingRect(m) : pointSetBoundingRect(m);
+	}
+
+#pragma endregion //从 opencv300 拷贝 zc::boundingRect 
+
 }//zc
+

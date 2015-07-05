@@ -10,7 +10,7 @@
 #include "CapgSkeleton.h"
 #include "bodyPartRecognizer.h"
 
-#include "sgf_segment.h"
+#include "./sgf_seed/sgf_segment.h"
 //using namespace sgf;
 
 using namespace std;
@@ -42,7 +42,14 @@ namespace zc{
 	//BPRecognizer* getBprAndLoadFeature();
 	//BPRecognizer* getBprAndLoadFeature(const char *featurePath = nullptr);
 	BPRecognizer* getBprAndLoadFeature(const string &featurePath);
-#endif
+#endif //CV_VERSION_EPOCH
+
+	//存 mat-vec 到 FileStorage
+	void saveVideo(const vector<Mat> &matVec, const char *fname);
+
+	//读 FileStorage
+	//@return mat-vec
+	vector<Mat> loadVideo(const char *fname);
 
 	Mat simpleMask(const Mat &curMat, bool debugDraw = false);
 
@@ -382,6 +389,9 @@ namespace zc{
 
 #pragma endregion //孙国飞头部种子点
 
+#pragma region //从 opencv300 拷贝 boundingRect 
+	cv::Rect boundingRect(InputArray array);
+#pragma endregion //从 opencv300 拷贝 boundingRect 
 
 }//namespace zc
 
