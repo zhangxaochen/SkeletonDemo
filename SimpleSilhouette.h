@@ -1,3 +1,6 @@
+#ifndef _SIMPLE_SILHOUETTE_
+#define _SIMPLE_SILHOUETTE_
+
 #include <iostream>
 #include <vector>
 #include <queue>
@@ -383,3 +386,5 @@ namespace zc{
 }//namespace zc
 
 using zc::HumanFg;
+
+#endif //_SIMPLE_SILHOUETTE_
