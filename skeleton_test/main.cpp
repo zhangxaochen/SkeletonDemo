@@ -162,9 +162,10 @@ void main(int argc, char **argv){
 	// 	oniFname = "E:/oni_data/oni132_orig/zc_indoor_walk-last.oni";
 	// 	oniFname = "E:/oni_data/oni132x64/zc-stand-w-feet.oni";
 	//oniFname = "E:/oni_data/oni132x64/zc-stand-wo-feet-qvga.oni";
+	oniFname = "E:/oni_data/oni132_orig/zc_indoor_stand.oni";
 
 	xn::Player plyr;
-	//rc = ctx.OpenFileRecording(oniFname, plyr);
+	rc = ctx.OpenFileRecording(oniFname, plyr);
 	plyr.SeekToFrame("Depth1", std::stoi(argv[1]), XN_PLAYER_SEEK_SET);
 	plyr.SetRepeat(string(argv[2])=="true"); //放在 OpenFileRecording 之后才有效
 	if(!checkOpenNIError(rc, "ctx.OpenFileRecording"))
@@ -210,6 +211,9 @@ void main(int argc, char **argv){
 		Mat dm_resized; //在线运行时，内存不可改，故此
 		resize(dmat, dm_resized, Size(dmat.cols*zoomFactor, dmat.rows*zoomFactor));
 		dmat = dm_resized;
+
+		dmat.convertTo(dm_draw, CV_8U, 1.*UCHAR_MAX / MAX_VALID_DEPTH);
+		imshow("dm_draw", dm_draw);
 
 #ifdef CAPG_SKEL_VERSION_0_1
 #pragma region //测试 distMap2contours[Debug], dmat2TopDownView[Debug]
@@ -594,7 +598,24 @@ void main(int argc, char **argv){
 		begt = clock();
 		//vector<Mat> fgMskVec = zc::findFgMasksUseWallAndHeight(dmat, ZC_DEBUG_LV1);
 		Mat tmp;
-		vector<Mat> fgMskVec = zc::findFgMasksUseBbox(maskedDmat, ZC_DEBUG_LV1, tmp);
+		//vector<Mat> fgMskVec = zc::findFgMasksUseBbox(maskedDmat, ZC_DEBUG_LV1, tmp);
+		int rgThresh = 55;
+#if 0 //XY-XZ-bbox 联合判定
+		vector<vector<Point>> sdBboxVov = zc::seedUseBboxXyXz(maskedDmat, ZC_DEBUG_LV1, tmp);
+		vector<Mat> fgMskVec = zc::simpleRegionGrow(maskedDmat, sdBboxVov, rgThresh, flrApartMask, false);
+#elif 1 //头身联合判定
+		const char *sgfConfigFn = "d:/Users/zhangxaochen/Desktop/SenseKitSDK-0.1.4-20150424T043853Z-win32/samples/plugins/orbbec_skeleton/sgf_seed/config.txt";
+		const char *sgfTempl = "D:/Users/zhangxaochen/Desktop/SenseKitSDK-0.1.4-20150424T043853Z-win32/samples/plugins/orbbec_skeleton/sgf_seed/headtemplate.bmp";
+		zc::loadSeedHeadConf(sgfConfigFn, sgfTempl);
+
+		vector<vector<Point>> sdHeadBodyVov = zc::seedUseHeadAndBodyCont(dmat, ZC_DEBUG_LV1, tmp);
+		vector<Mat> fgMskVec = zc::simpleRegionGrow(maskedDmat, sdHeadBodyVov, rgThresh, flrApartMask, false);
+
+		//调试显示：
+		zc::seedHead(dmat, true);
+
+#endif
+
 		cout << "bbb.findFgMasksUseBbox.ts: " << clock() - begt << endl;
 		if (ZC_DEBUG_LV1){
 			Mat btmp = zc::getHumansMask(fgMskVec, dmat.size());
@@ -675,6 +696,8 @@ void main(int argc, char **argv){
 			imshow("skCanvas", skCanvas);
 		}
 
+		//必须： 更新 prevDmat
+		zc::setPrevDmat(dmat);
 
 #endif // CAPG_SKEL_VERSION_0_9
 
@@ -690,6 +713,13 @@ void main(int argc, char **argv){
 		case ' ': //暂停&逐帧
 			isManually = !isManually;
 			break;
+		case 'r': //reset
+			plyr.SeekToFrame("Depth1", 0, XN_PLAYER_SEEK_SET);
+			prevMaskVec.clear();
+			humVec.clear();
+
+			break;
+
 		}//switch
 
 		if(isExit)

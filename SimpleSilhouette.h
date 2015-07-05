@@ -188,7 +188,7 @@ namespace zc{
 	// 1. 若 debugDraw = true, 则 _debug_mat 必须传实参
 	vector<vector<Point> > distMap2contours(const Mat &dmat, bool debugDraw = false, OutputArray _debug_mat = noArray());
 
-	//@todo 重构了distMap2contours，另外debugDraw彩色
+	//@brief 重构了distMap2contours，另外debugDraw彩色
 	//@return 正视图中 bboxIsHuman 的 contours
 	vector<vector<Point> > distMap2contours_new(const Mat &dmat, bool debugDraw = false, OutputArray _debug_mat = noArray());
 
@@ -396,5 +396,19 @@ namespace zc{
 }//namespace zc
 
 using zc::HumanFg;
+
+//---------------测试代码放这里
+namespace zc{
+	Mat getLaplaceEdgeKrnl(size_t krnlSz = 5);
+
+	Mat getLaplaceEdgeFilter2D(const Mat &dmat, size_t krnlSz = 5);
+
+	//@brief 根据krnlSz邻域内非零点个数 N 填充空洞, 若 N > countThresh, 填充邻域均值
+	//@param hasSideEffect 逐行扫描时, 前面填充的像素是否会影响后面像素. 若 true, 则最终必然再无非零像素
+	//@return filled-dmat
+	//@note 效率： 1. 默认参数, qvga~8ms; 2. hasSideEffect==true, qvga~11ms; 3. krnlSz=3, countThresh=2 几乎无效率影响
+	Mat holeFillNbor(const Mat &dmat, bool hasSideEffect = false, size_t krnlSz = 5, int countThresh = 3);
+
+}//zc
 
 #endif //_SIMPLE_SILHOUETTE_

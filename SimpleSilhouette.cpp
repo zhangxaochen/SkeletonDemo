@@ -3203,3 +3203,65 @@ namespace zc{
 
 }//zc
 
+//---------------测试代码放这里
+namespace zc{
+	Mat getLaplaceEdgeKrnl(size_t krnlSz /*= 5*/){
+		CV_Assert(krnlSz % 2 == 1);
+		
+		Mat krnlMat = Mat::zeros(krnlSz, krnlSz, CV_16SC1);
+
+		krnlMat.row(0) = -1;
+		krnlMat.row(krnlMat.rows - 1) = -1;
+		krnlMat.col(0) = -1;
+		krnlMat.col(krnlMat.cols - 1) = -1;
+
+		int factor = (krnlSz - 1) * 4;
+		int center = krnlSz / 2;
+		krnlMat.at<short>(center, center) = factor;
+
+		return krnlMat;
+	}//getLaplaceEdgeKrnl
+
+	Mat getLaplaceEdgeFilter2D(const Mat &dmat, size_t krnlSz /*= 5*/){
+		Mat res;
+		Mat krnl = getLaplaceEdgeKrnl(krnlSz);
+		filter2D(dmat, res, CV_32F, krnl);
+
+		return res;
+	}//getLaplaceEdgeFilter2D
+
+	cv::Mat holeFillNbor(const Mat &dmat, bool hasSideEffect /*= false*/, size_t krnlSz /*= 5*/, int countThresh /*= 3*/)
+{
+		CV_Assert(krnlSz % 2 == 1);
+
+		Mat res = dmat.clone();
+
+		int radius = krnlSz / 2;
+		Mat dmat_with_border;
+		cv::copyMakeBorder(dmat, dmat_with_border, radius, radius, radius, radius, BORDER_REPLICATE);
+		for (size_t i = 0; i < dmat.rows; i++){
+			for (size_t j = 0; j < dmat.cols; j++){
+				ushort z = dmat.at<ushort>(i, j);
+				//无效区域：
+				if (z == 0){
+// 					Point pt_w_bdr()
+// 					int offset=
+
+					//看的是边界填充了的 dmat_with_border：
+					Rect nbRect(j, i, krnlSz, krnlSz);
+					Mat nbMat = dmat_with_border(nbRect);
+					//邻域内有效值数量达到阈值：
+					if (countNonZero(nbMat) > countThresh){
+						ushort newz = cv::mean(nbMat, nbMat != 0)[0];
+						res.at<ushort>(i, j) = newz;
+						if (hasSideEffect)
+							dmat_with_border.at<ushort>(i + radius, j + radius) = newz;
+					}
+
+				}
+			}
+		}
+
+		return res;
+	}//holeFillNbor
+}//zc
