@@ -42,6 +42,10 @@ namespace sgf
 		bool read_config(const std::string &configPath);
 		int accurate;
 		std::string videoname;
+
+		//根据找到区域的轮廓进行进一步分割，用来对坐姿下的被增长在一起的人进行分割
+		std::vector<cv::Point> get_seperate_points(const cv::Mat&,bool showResult=false);
+		std::vector<cv::Mat> get_seperate_masks(const cv::Mat&,bool showresult=false);
 	private:
 		std::vector<cv::Point2i> get_seed();
 		std::vector<cv::Point2i> get_seed_raw();
@@ -68,6 +72,7 @@ namespace sgf
 		void compute_height();
 		void compute_cost();
 		void useMOG();
+
 
 
 	private:
@@ -148,7 +153,7 @@ namespace sgf
 		std::vector<cv::Vec3f> real_head;
 		std::vector<cv::Mat> sub_contours;
 
-		std::list<cv::Point2i> stack_list;
+		std::queue<cv::Point2i> seed_queue;
 	};
 }
 
