@@ -9,6 +9,7 @@ result=seg.seedmethod1(dmat);
 result=seg.seedmethod2(dmat);
 
 
-为segment类增加两个函数public:  get_seperate_points(Mat mask,bool showResult=false), get_seperate_masks
+为segment类增加两个函数public:  get_seperate_points(Mat mask,bool showResult=false，bool Delay=false), get_seperate_masks
 返回值分别是vector<Point>,vector<Mat>
 这两个函数的任务是把一堆无法分离的人按照轮廓的局部最小值将他们分成几个mask
+显示的时候在同一幅图里边用不同颜色显示不同的mask

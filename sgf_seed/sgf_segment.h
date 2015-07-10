@@ -44,8 +44,8 @@ namespace sgf
 		std::string videoname;
 
 		//根据找到区域的轮廓进行进一步分割，用来对坐姿下的被增长在一起的人进行分割
-		std::vector<cv::Point> get_seperate_points(const cv::Mat&,bool showResult=false);
-		std::vector<cv::Mat> get_seperate_masks(const cv::Mat&,bool showresult=false);
+		std::vector<cv::Point> get_seperate_points(const cv::Mat&,bool showResult=false,bool Delay=false);
+		std::vector<cv::Mat> get_seperate_masks(const cv::Mat&,bool showresult=false,bool Delay=false);
 	private:
 		std::vector<cv::Point2i> get_seed();
 		std::vector<cv::Point2i> get_seed_raw();

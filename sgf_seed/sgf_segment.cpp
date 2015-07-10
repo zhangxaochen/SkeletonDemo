@@ -233,7 +233,7 @@ vector<Point> segment::seed_method1(cv::Mat dmat,bool showResult/* =false */,boo
 
 	/*--------*/
 	//寻找轮廓的极值点，用来分割长在一起的人
-	vector<Mat> Masks=get_seperate_masks(region_grow_map);
+	vector<Mat> Masks=get_seperate_masks(region_grow_map,true);
 	/*--------*/
 	
 	if (showTime)
@@ -1301,7 +1301,7 @@ void segment::useMOG()
 	imshow("foreground of MOG",fg_depth);waitKey(1);
 }
 
-vector<Point> segment::get_seperate_points(const Mat& M,bool showResult)
+vector<Point> segment::get_seperate_points(const Mat& M,bool showResult,bool Delay)
 {
 	Mat tmp=M.clone();
 	vector<vector<Point> > contours;
@@ -1330,7 +1330,7 @@ vector<Point> segment::get_seperate_points(const Mat& M,bool showResult)
 	p_left.x=region_grow_map.cols;
 	p_right.x=0;
 	int size_p=P.size();
-	int num=size_p/10;
+	int num=size_p/20;
 	for (int i=0;i<size_p;++i)
 	{
 		if (P[i].x<p_left.x)
@@ -1374,14 +1374,14 @@ vector<Point> segment::get_seperate_points(const Mat& M,bool showResult)
 		}
 		if (is_min)
 		{
-			if (local_minimum.size()==0||abs(local_minimum[local_minimum.size()-1].x-p.x)>10)
+			if (local_minimum.size()==0||abs(local_minimum[local_minimum.size()-1].x-p.x)>5)
 			{
 				local_minimum.push_back(p);local_min_index.push_back(i);
 			}
 		}
 		if (is_max)
 		{
-			if (local_maximum.size()==0||abs(local_maximum[local_maximum.size()-1].x-p.x)>10)
+			if (local_maximum.size()==0||abs(local_maximum[local_maximum.size()-1].x-p.x)>5)
 			{
 				local_maximum.push_back(p);
 			}
@@ -1394,12 +1394,16 @@ vector<Point> segment::get_seperate_points(const Mat& M,bool showResult)
 		{
 			circle(tmp,local_minimum[i],5,128,5);
 		}
-		imshow("minimum points",tmp);waitKey(1);
+		imshow("minimum points",tmp);
+		if (Delay)
+			waitKey(0);
+		else
+			waitKey(1);
 	}
 	return local_minimum;
 }
 
-vector<Mat> segment::get_seperate_masks(const Mat& M,bool showResult)
+vector<Mat> segment::get_seperate_masks(const Mat& M,bool showResult,bool Delay)
 {
 	Mat tmp=M.clone();
 	vector<vector<Point> > contours;
@@ -1428,7 +1432,7 @@ vector<Mat> segment::get_seperate_masks(const Mat& M,bool showResult)
 	p_left.x=region_grow_map.cols;
 	p_right.x=0;
 	int size_p=P.size();
-	int num=size_p/10;
+	int num=size_p/20;
 	for (int i=0;i<size_p;++i)
 	{
 		if (P[i].x<p_left.x)
@@ -1472,14 +1476,14 @@ vector<Mat> segment::get_seperate_masks(const Mat& M,bool showResult)
 		}
 		if (is_min)
 		{
-			if (local_minimum.size()==0||abs(local_minimum[local_minimum.size()-1].x-p.x)>10)
+			if (local_minimum.size()==0||abs(local_minimum[local_minimum.size()-1].x-p.x)>5)
 			{
 				local_minimum.push_back(p);local_min_index.push_back(i);
 			}
 		}
 		if (is_max)
 		{
-			if (local_maximum.size()==0||abs(local_maximum[local_maximum.size()-1].x-p.x)>10)
+			if (local_maximum.size()==0||abs(local_maximum[local_maximum.size()-1].x-p.x)>5)
 			{
 				local_maximum.push_back(p);
 			}
@@ -1495,6 +1499,9 @@ vector<Mat> segment::get_seperate_masks(const Mat& M,bool showResult)
 		imshow("minimum points",tmp);waitKey(1);
 	}
 	vector<Mat> Masks;
+	int color_1=255/(local_minimum.size()+1);
+	int color_2=1;
+	Mat demo_show=Mat::zeros(region_grow_map.rows,region_grow_map.cols,CV_8U);
 	//根据每一个最小值点，将原始mask分成很多小块
 	if (local_minimum.size()>=1)
 	{
@@ -1517,10 +1524,11 @@ vector<Mat> segment::get_seperate_masks(const Mat& M,bool showResult)
 		}
 		c.push_back(contour);
 		drawContours(mask,c,-1,255,CV_FILLED);
-		if (showResult)
-		{
-			imshow("seperated mask left",mask);waitKey(1);
-		}
+		drawContours(demo_show,c,-1,color_1*color_2,CV_FILLED);++color_2;
+// 		if (showResult)
+// 		{
+// 			imshow("seperated mask left",mask);waitKey(1);
+// 		}
 		Masks.push_back(mask.clone());
 
 		//中间部分分开
@@ -1552,10 +1560,11 @@ vector<Mat> segment::get_seperate_masks(const Mat& M,bool showResult)
 			}
 			c.push_back(contour);
 			drawContours(mask,c,-1,255,CV_FILLED);
-			if (showResult)
-			{
-				imshow("seperated mask "+string('0'+i,1),mask);waitKey(1);
-			}
+			drawContours(demo_show,c,-1,color_1*color_2,CV_FILLED);++color_2;
+// 			if (showResult)
+// 			{
+// 				imshow("seperated mask "+string('0'+i,1),mask);waitKey(1);
+// 			}
 			Masks.push_back(mask.clone());
 		}
 
@@ -1575,11 +1584,20 @@ vector<Mat> segment::get_seperate_masks(const Mat& M,bool showResult)
 		}
 		c.push_back(contour);
 		drawContours(mask,c,-1,255,CV_FILLED);
-		if (showResult)
-		{
-			imshow("seperated mask right",mask);waitKey(1);
-		}
+		drawContours(demo_show,c,-1,color_1*color_2,CV_FILLED);++color_2;
+// 		if (showResult)
+// 		{
+// 			imshow("seperated mask right",mask);waitKey(1);
+// 		}
 		Masks.push_back(mask.clone());
+	}
+	if (showResult)
+	{
+		imshow("demo show seperate region",demo_show);
+		if (Delay)
+			waitKey(0);
+		else
+			waitKey(1);
 	}
 	return Masks;
 }
