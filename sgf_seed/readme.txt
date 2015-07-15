@@ -13,3 +13,6 @@ result=seg.seedmethod2(dmat);
 返回值分别是vector<Point>,vector<Mat>
 这两个函数的任务是把一堆无法分离的人按照轮廓的局部最小值将他们分成几个mask
 显示的时候在同一幅图里边用不同颜色显示不同的mask
+
+使用方法：
+vector<Mat> res=seg.get_seperate_masks(mask)

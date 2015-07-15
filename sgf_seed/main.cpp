@@ -111,7 +111,7 @@ plyr.SeekToFrame("MyDepth", 999, XN_PLAYER_SEEK_SET);
 			itoa(number,name,10);
 			string s=name;
 
-			//my_seg.set_name(s);
+			my_seg.set_name(s);
 			//my_seg.set_depthMap(depth);
 			//my_seg.set_background(depth);
 			my_seg.set_headTemplate2D("headtemplate.bmp");
@@ -119,7 +119,7 @@ plyr.SeekToFrame("MyDepth", 999, XN_PLAYER_SEEK_SET);
 			vector<Point> seed;
 			Mat mask;
 
-			seed=my_seg.seed_method1(depth,true);
+			seed=my_seg.seed_method1(depth,false,true);
 			//seed=my_seg.seedSGF(depth,true);
 			//seed=my_seg.seedSGF(depth,true,mask);
 
@@ -135,7 +135,7 @@ plyr.SeekToFrame("MyDepth", 999, XN_PLAYER_SEEK_SET);
 			//break;
 			if(27==c)break;
 		}  
-// 		++number;
+ 		++number;
 // 		if (number==800||number==200||number==500)
 // 		{
 // 			cout<<number<<endl;

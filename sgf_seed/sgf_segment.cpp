@@ -227,17 +227,30 @@ vector<Point> segment::seed_method1(cv::Mat dmat,bool showResult/* =false */,boo
 	for (int i=0;i<headpoints_location.size();++i)
 	{
 		seed_queue.empty();
-		region_grow(headpoints_location[i].y,headpoints_location[i].x,1);
+		region_grow(headpoints_location[i].y,headpoints_location[i].x,50);
 	}
+	int dilate_size=1;
+	Mat element1 = getStructuringElement( MORPH_RECT,
+		Size( 2*dilate_size + 1, 2*dilate_size+1 ),
+		Point( dilate_size, dilate_size ) );
+	dilate( region_grow_map,region_grow_map,element1);
 	imshow("region grow",region_grow_map);waitKey(1);
+	imwrite("region_grow_"+name+".jpg",region_grow_map);
+	cout<<name<<endl;
+
+	Mat fg_depth;
+	my_MOG.operator()(gray_map, fg_depth, 0.005);
+	imshow("foeground mask",fg_depth);waitKey(1);
 
 	/*--------*/
 	//寻找轮廓的极值点，用来分割长在一起的人
+	int t=clock();
 	vector<Mat> Masks=get_seperate_masks(region_grow_map,true);
 	/*--------*/
 	
 	if (showTime)
 	{
+		cout<<"time spend in seperating masks: "<<clock()-t<<endl;
 		cout<<"time spend:"<<clock()-begin<<endl;
 	}
 	if (showResult)
@@ -607,15 +620,18 @@ void segment::region_grow(int x,int y,int thres)
 		region_grow_map.at<uchar>(p_tmp.x,p_tmp.y)=255;
 		for (int i=-1;i<2;i+=2)
 		{
+			double tmp_d1=depth_map.at<float>(p_tmp.x,p_tmp.y);
 			double x=p_tmp.x+i,y=p_tmp.y;
 			if (x>=0 && x<distance_map.rows && y>=0 && y<distance_map.cols)
 			{
 				if (mask_of_distance.at<uchar>(x,y)==0)
 				{
 					mask_of_distance.at<uchar>(x,y)=1;
-					double tmp=distance_map.at<float>(x,y);
+					//double tmp=distance_map.at<float>(x,y);
 					double tmp1=filter_map.at<uchar>(x,y);
-					if (tmp>thres&&tmp1<100)
+					double tmp_d2=depth_map.at<float>(x,y);
+					//if (tmp>thres&&tmp1<100)
+					if (abs(tmp_d1-tmp_d2)<thres&&tmp1<100)
 					{
 						Point2i p1;
 						p1.x=x;p1.y=y;
@@ -629,9 +645,11 @@ void segment::region_grow(int x,int y,int thres)
 				if (mask_of_distance.at<uchar>(x,y)==0)
 				{
 					mask_of_distance.at<uchar>(x,y)=1;
-					double tmp=distance_map.at<float>(x,y);
+					//double tmp=distance_map.at<float>(x,y);
 					double tmp1=filter_map.at<uchar>(x,y);
-					if (tmp>thres&&tmp1<100)
+					double tmp_d2=depth_map.at<float>(x,y);
+					//if (tmp>thres&&tmp1<100)
+					if (abs(tmp_d1-tmp_d2)<thres&&tmp1<100)
 					{
 						Point2i p1;
 						p1.x=x;p1.y=y;
@@ -676,6 +694,16 @@ void segment::seperate_foot_and_ground()
 	minMaxLoc(filter_map,&dmin,&dmax);
 	//imshow("filter map",filter_map);
 	filter_map.convertTo(filter_map,CV_8U);
+	for (int i=0;i<filter_map.rows;++i)
+	{
+		for (int j=0;j<filter_map.cols;++j)
+		{
+			if (i<150)
+			{
+				filter_map.at<uchar>(i,j)=0;
+			}
+		}
+	}
 	imshow("filter map1",filter_map);
 
 	waitKey(1);
@@ -1287,7 +1315,7 @@ void segment::useMOG()
 	//BackgroundSubtractorMOG2 bgMOG(10, 2, false );
 	Mat fg_depth;
 #ifdef CV_VERSION_EPOCH
-	my_MOG.operator()(gray_map, fg_depth, 0.0005);
+	my_MOG.operator()(gray_map, fg_depth, 0.005);
 #elif CV_VERSION_MAJOR >= 3
 	//TODO: cv3
 #endif //CV_VERSION_EPOCH
@@ -1326,9 +1354,12 @@ vector<Point> segment::get_seperate_points(const Mat& M,bool showResult,bool Del
 	vector<Point> P=contours[idx];
 	//循环遍历P，找到最左边和最右边的点
 	Point p_left,p_right;
+	Point p_top,p_down;
 	int index_left,index_right;
 	p_left.x=region_grow_map.cols;
 	p_right.x=0;
+	p_top.y=region_grow_map.cols;
+	p_down.y=0;
 	int size_p=P.size();
 	int num=size_p/20;
 	for (int i=0;i<size_p;++i)
@@ -1341,7 +1372,16 @@ vector<Point> segment::get_seperate_points(const Mat& M,bool showResult,bool Del
 		{
 			p_right=P[i];index_right=i;
 		}
+		if (P[i].y<p_top.y)
+		{
+			p_top=P[i];
+		}
+		if (P[i].y>p_down.y)
+		{
+			p_down=P[i];
+		}
 	}
+	int region_height=p_down.y-p_top.y;
 	//因为不知道轮廓点是顺时针还是逆时针，这里要判断一下，保证以顺时针的顺序遍历从左到右的点
 	int flag=-1;
 	int test=(index_left-1)%size_p;
@@ -1357,6 +1397,7 @@ vector<Point> segment::get_seperate_points(const Mat& M,bool showResult,bool Del
 		Point p=P[i];
 		bool is_min=true;
 		bool is_max=true;
+		int min_y=region_grow_map.rows;
 		for (int j=1;j<=num;++j)
 		{
 			if (p.y>P[(i+j)%size_p].y||p.y>P[(i-j+size_p)%size_p].y)
@@ -1371,12 +1412,20 @@ vector<Point> segment::get_seperate_points(const Mat& M,bool showResult,bool Del
 			{
 				break;
 			}
+			min_y=min(min_y,min(P[(i+j)%size_p].y,P[(i-j+size_p)%size_p].y));
 		}
 		if (is_min)
 		{
 			if (local_minimum.size()==0||abs(local_minimum[local_minimum.size()-1].x-p.x)>5)
 			{
-				local_minimum.push_back(p);local_min_index.push_back(i);
+				if (p.y-p_top.y>region_height/3)
+				{
+
+					if (p.y-min_y/(2*num)>10)
+					{
+						local_minimum.push_back(p);local_min_index.push_back(i);
+					}
+				}
 			}
 		}
 		if (is_max)
@@ -1426,11 +1475,16 @@ vector<Mat> segment::get_seperate_masks(const Mat& M,bool showResult,bool Delay)
 		}
 	}
 	vector<Point> P=contours[idx];
+	double total_area=contourArea(P);
+	double area_rate=0.2;
 	//循环遍历P，找到最左边和最右边的点
 	Point p_left,p_right;
+	Point p_top,p_down;
 	int index_left,index_right;
 	p_left.x=region_grow_map.cols;
 	p_right.x=0;
+	p_top.y=region_grow_map.cols;
+	p_down.y=0;
 	int size_p=P.size();
 	int num=size_p/20;
 	for (int i=0;i<size_p;++i)
@@ -1443,7 +1497,16 @@ vector<Mat> segment::get_seperate_masks(const Mat& M,bool showResult,bool Delay)
 		{
 			p_right=P[i];index_right=i;
 		}
+		if (P[i].y<p_top.y)
+		{
+			p_top=P[i];
+		}
+		if (P[i].y>p_down.y)
+		{
+			p_down=P[i];
+		}
 	}
+	int region_height=p_down.y-p_top.y;
 	//因为不知道轮廓点是顺时针还是逆时针，这里要判断一下，保证以顺时针的顺序遍历从左到右的点
 	int flag=-1;
 	int test=(index_left-1)%size_p;
@@ -1459,6 +1522,7 @@ vector<Mat> segment::get_seperate_masks(const Mat& M,bool showResult,bool Delay)
 		Point p=P[i];
 		bool is_min=true;
 		bool is_max=true;
+		int min_y=region_grow_map.rows;
 		for (int j=1;j<=num;++j)
 		{
 			if (p.y>P[(i+j)%size_p].y||p.y>P[(i-j+size_p)%size_p].y)
@@ -1473,12 +1537,19 @@ vector<Mat> segment::get_seperate_masks(const Mat& M,bool showResult,bool Delay)
 			{
 				break;
 			}
+			min_y=min(min_y,min(P[(i+j)%size_p].y,P[(i-j+size_p)%size_p].y));
 		}
 		if (is_min)
 		{
 			if (local_minimum.size()==0||abs(local_minimum[local_minimum.size()-1].x-p.x)>5)
 			{
-				local_minimum.push_back(p);local_min_index.push_back(i);
+				if (p.y-p_top.y>region_height/3)
+				{
+					if (p.y-min_y>10)
+					{
+						local_minimum.push_back(p);local_min_index.push_back(i);
+					}
+				}
 			}
 		}
 		if (is_max)
@@ -1499,6 +1570,20 @@ vector<Mat> segment::get_seperate_masks(const Mat& M,bool showResult,bool Delay)
 		imshow("minimum points",tmp);waitKey(1);
 	}
 	vector<Mat> Masks;
+	if (local_minimum.size()==0)
+	{
+		if (showResult)
+		{
+			imshow("demo show seperate region",region_grow_map);
+			imwrite("seperate_mask_"+name+".jpg",region_grow_map);
+			if (Delay)
+				waitKey(0);
+			else
+				waitKey(1);
+		}
+		Masks.push_back(region_grow_map.clone());
+		return Masks;
+	}
 	int color_1=255/(local_minimum.size()+1);
 	int color_2=1;
 	Mat demo_show=Mat::zeros(region_grow_map.rows,region_grow_map.cols,CV_8U);
@@ -1512,6 +1597,7 @@ vector<Mat> segment::get_seperate_masks(const Mat& M,bool showResult,bool Delay)
 		Point p_mid1,p_mid2;
 		int index_mid1,index_mid2;
 		p_mid1=P[local_min_index[0]];index_mid1=local_min_index[0];
+		int _c=0;
 		for (int j=local_min_index[0];;j=(j-flag+size_p)%size_p)
 		{
 			Point p=P[j];
@@ -1521,15 +1607,27 @@ vector<Mat> segment::get_seperate_masks(const Mat& M,bool showResult,bool Delay)
 				p_mid2=p;index_mid2=j;
 				break;
 			}
+			++_c;
+			if (_c>size_p)
+			{
+				break;
+			}
+			
 		}
+		double area=contourArea(contour);
+		if (area>total_area*area_rate)
+		{
 		c.push_back(contour);
 		drawContours(mask,c,-1,255,CV_FILLED);
-		drawContours(demo_show,c,-1,color_1*color_2,CV_FILLED);++color_2;
+		mask=mask&region_grow_map;
+		demo_show.setTo(color_1*color_2,mask);++color_2;
+		/*drawContours(demo_show,c,-1,color_1*color_2,CV_FILLED);++color_2;*/
 // 		if (showResult)
 // 		{
 // 			imshow("seperated mask left",mask);waitKey(1);
 // 		}
 		Masks.push_back(mask.clone());
+		}
 
 		//中间部分分开
 		for (int i=0;i<local_minimum.size()-1;++i)
@@ -1558,14 +1656,20 @@ vector<Mat> segment::get_seperate_masks(const Mat& M,bool showResult,bool Delay)
 					break;
 				}
 			}
+			area=contourArea(contour);
+			if (area>total_area*area_rate)
+			{
 			c.push_back(contour);
 			drawContours(mask,c,-1,255,CV_FILLED);
-			drawContours(demo_show,c,-1,color_1*color_2,CV_FILLED);++color_2;
+			mask=mask&region_grow_map;
+			demo_show.setTo(color_1*color_2,mask);++color_2;
+			/*drawContours(demo_show,c,-1,color_1*color_2,CV_FILLED);++color_2;*/
 // 			if (showResult)
 // 			{
 // 				imshow("seperated mask "+string('0'+i,1),mask);waitKey(1);
 // 			}
 			Masks.push_back(mask.clone());
+			}
 		}
 
 		//最右边分开
@@ -1582,18 +1686,25 @@ vector<Mat> segment::get_seperate_masks(const Mat& M,bool showResult,bool Delay)
 				break;
 			}
 		}
+		area=contourArea(contour);
+		if (area>total_area*area_rate)
+		{
 		c.push_back(contour);
 		drawContours(mask,c,-1,255,CV_FILLED);
-		drawContours(demo_show,c,-1,color_1*color_2,CV_FILLED);++color_2;
+		mask=mask&region_grow_map;
+		demo_show.setTo(color_1*color_2,mask);++color_2;
+		/*drawContours(demo_show,c,-1,color_1*color_2,CV_FILLED);++color_2;*/
 // 		if (showResult)
 // 		{
 // 			imshow("seperated mask right",mask);waitKey(1);
 // 		}
 		Masks.push_back(mask.clone());
+		}
 	}
 	if (showResult)
 	{
 		imshow("demo show seperate region",demo_show);
+		imwrite("seperate_mask_"+name+".jpg",demo_show);
 		if (Delay)
 			waitKey(0);
 		else
