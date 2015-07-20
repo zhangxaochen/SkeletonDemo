@@ -201,7 +201,7 @@ Mat segment::get_result()
 {
 	return interest_point2.clone();
 }
-vector<Point> segment::seed_method1(cv::Mat dmat,bool showResult/* =false */,bool showTime/*=false*/) //利用模板匹配
+vector<Point> segment::head_location_method1(cv::Mat dmat,bool showResult/* =false */,bool showTime/*=false*/,bool showDemo/*=false*/) //利用模板匹配
 {
 	set_depthMap(dmat);
 	int begin=clock();
@@ -222,6 +222,12 @@ vector<Point> segment::seed_method1(cv::Mat dmat,bool showResult/* =false */,boo
 	find_and_draw_countours();
 	choose_and_draw_interest_region();
 
+	if (!showDemo)
+	{
+		return headpoints_location;
+	}
+
+	//下边是自己的区域增长和分割
 	region_grow_map=Mat::zeros(distance_map.rows,distance_map.cols,CV_8U);
 	mask_of_distance=Mat::zeros(distance_map.rows,distance_map.cols,CV_8U);
 	for (int i=0;i<headpoints_location.size();++i)
@@ -234,9 +240,12 @@ vector<Point> segment::seed_method1(cv::Mat dmat,bool showResult/* =false */,boo
 		Size( 2*dilate_size + 1, 2*dilate_size+1 ),
 		Point( dilate_size, dilate_size ) );
 	dilate( region_grow_map,region_grow_map,element1);
-	imshow("region grow",region_grow_map);waitKey(1);
-	imwrite("region_grow_"+name+".jpg",region_grow_map);
-	cout<<name<<endl;
+	if (showResult)
+	{
+		imshow("region grow",region_grow_map);waitKey(1);
+// 		imwrite("region_grow_"+name+".jpg",region_grow_map);
+// 		cout<<name<<endl;
+	}
 
 	Mat fg_depth;
 #ifdef CV_VERSION_EPOCH
@@ -244,7 +253,10 @@ vector<Point> segment::seed_method1(cv::Mat dmat,bool showResult/* =false */,boo
 #elif CV_VERSION_MAJOR >= 3
 	//TODO: cv3
 #endif //CV_VERSION_EPOCH
-	imshow("foeground mask",fg_depth);waitKey(1);
+	if (showResult)
+	{
+		imshow("foeground mask",fg_depth);waitKey(1);
+	}
 
 	//根据区域内动点个数进行分割长在一起的人
 	vector<Mat> res_tmp=get_seperate_masks(region_grow_map,fg_depth,headpoints_location,headpoints_radius,true,true);
@@ -252,7 +264,7 @@ vector<Point> segment::seed_method1(cv::Mat dmat,bool showResult/* =false */,boo
 	/*--------*/
 	//寻找轮廓的极值点，用来分割长在一起的人
 	int t=clock();
-	//vector<Mat> Masks=get_seperate_masks(region_grow_map,true);
+	vector<Mat> Masks=get_seperate_masks(region_grow_map,true);
 	/*--------*/
 	
 	if (showTime)
@@ -711,7 +723,7 @@ void segment::seperate_foot_and_ground()
 			}
 		}
 	}
-	imshow("filter map1",filter_map);
+	/*imshow("filter map1",filter_map);*/
 
 	waitKey(1);
 
@@ -737,7 +749,7 @@ void segment::seperate_foot_and_ground()
 		Point( dilate_size, dilate_size ) );
 	erode( filter_map, filter_map,element);
 	dilate( filter_map, filter_map,element1);
- 	imshow("filter map binary",filter_map);
+ 	/*imshow("filter map binary",filter_map);*/
  	waitKey(1);
 }
 void segment::compute_hist()
@@ -1900,6 +1912,7 @@ vector<Mat> segment::get_seperate_masks(const cv::Mat& fgMask,const cv::Mat& mog
 		//contour.push_back(left_down);
 		vector<vector<Point>> c;c.push_back(contour);
 		drawContours(mask,c,-1,255,CV_FILLED);
+		mask=mask&fgMask;
 		res.push_back(mask);
 	}
 	imshow("seperate mask",mask);waitKey(1);
