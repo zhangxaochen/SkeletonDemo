@@ -3149,8 +3149,13 @@ namespace zc{
 
 		static Ptr<BackgroundSubtractorMOG2> pMog2;// = createBackgroundSubtractorMOG2(history, varThresh, detectShadows);
 		if (fid <= oldFid){
+#ifdef CV_VERSION_EPOCH //if opencv2.x
+
+#elif CV_VERSION_MAJOR >= 3 //if opencv3
+
 			//pMog2->clear(); //没效果
 			pMog2 = createBackgroundSubtractorMOG2(history, varThresh, detectShadows);
+#endif //CV_VERSION_EPOCH
 		}
 		
 		Mat fgMskMog2;
@@ -3488,7 +3493,7 @@ namespace zc{
 		CV_Assert(my_seg != nullptr);
 		
 		//return my_seg->seedSGF(dmat, debugDraw);
-		return my_seg->seed_method1(dmat, debugDraw);
+		return my_seg->head_location_method1(dmat, debugDraw);
 	}
 
 #pragma endregion //孙国飞头部种子点-wrapper
@@ -4076,6 +4081,9 @@ namespace zc{
 		bool detectShadows = false;
 		double bgRatio = 0.29;
 
+#ifdef CV_VERSION_EPOCH //if opencv2.x
+#elif CV_VERSION_MAJOR >= 3 //if opencv3
+
 		static Ptr<BackgroundSubtractorMOG2> pMOG2_maxDmat = createBackgroundSubtractorMOG2(history, varThresh, detectShadows);
 		Mat maxDmatFgMOG2;
 		//32F不行，孙国飞说错了？【未核实】
@@ -4087,6 +4095,7 @@ namespace zc{
 		pMOG2_maxDmat->setBackgroundRatio(bgRatio);
 		pMOG2_maxDmat->apply(maxDmat8u, maxDmatFgMOG2);
 		//imshow("maxDmatFgMOG2", maxDmatFgMOG2);
+#endif //CV_VERSION_EPOCH
 
 		int morphRadius = 2;
 		morphologyEx(maxDmatFgMOG2, maxDmatFgMOG2, MORPH_DILATE, getMorphKrnl(morphRadius));
