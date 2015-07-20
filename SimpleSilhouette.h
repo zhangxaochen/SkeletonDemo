@@ -24,16 +24,19 @@ const int QVGA_WIDTH = 320,
 #define XTION_FOCAL_XY 300
 
 #define MIN_VALID_HEIGHT_PHYSICAL_SCALE 600
-#define MIN_VALID_HW_RATIO 1.0 //height-width ratio
+#define MIN_VALID_HW_RATIO 1.5 //height-width ratio
 
 static cv::RNG rng;
 
 extern const int thickLimitDefault;// = 1500;
 extern int thickLimit;// = thickLimitDefault; //毫米
 
+//一些调试颜色：
+extern Scalar cwhite, cred, cgreen, cblue, cyellow;
+
 
 namespace zc{
-	class HumanFg;
+	class HumanObj;
 
 #ifdef CV_VERSION_EPOCH
 //#if CV_VERSION_MAJOR < 3
@@ -65,6 +68,11 @@ namespace zc{
 	//用正视图+头部种子点联合判定人体轮廓位置，
 	//@return 正视图contours
 	vector<vector<Point>> seedUseHeadAndBodyCont(Mat dmat, bool debugDraw = false, OutputArray _debug_mat = noArray());
+
+	//@note 2015年7月12日00:15:52	【未完成】
+	//@brief 用头部种子点+MOG2运动联合判定可信种子点
+	//@return N个离散的头部种子点
+	vector<Point> seedUseMovingHead(Mat dmat, bool isNewFrame = true, bool debugDraw = false, OutputArray _debug_mat = noArray());
 
 	//@deprecated, 语义不明，弃用；其实包含两步：去背景 & findFgMasksUseBbox
 	//1. 找背景大墙面；
@@ -159,8 +167,8 @@ namespace zc{
 	void drawOneSkeleton(Mat &img, CapgSkeleton &sk);
 	void drawSkeletons(Mat &img, const vector<CapgSkeleton> &sklts, int skltIdx);
 
-	//@Overload HumanFg-vec 版
-	void drawSkeletons(Mat &img, vector<HumanFg> &humObjVec, int skltIdx);
+	//@Overload HumanObj-vec 版
+	void drawSkeletons(Mat &img, vector<HumanObj> &humObjVec, int skltIdx);
 
 	//@deprecated, no use
 	//@param contours 引用， 会被修改
@@ -220,7 +228,12 @@ namespace zc{
 	//@deprecated 未实现，因为将仅等价于 seedUseHeadAndBodyCont + simpleRegionGrow
 	vector<Mat> findFgMasksUseHeadAndBodyCont(Mat &dmat, bool debugDraw = false);
 
-	vector<Mat> trackingNoMove(Mat dmat, const vector<Mat> &prevFgMaskVec, const vector<Mat> &currFgMskVec, bool debugDraw = false);
+	//@brief 
+	//@param prevFgMaskVec: 前一帧的最终 fgMaskVec
+	//@param currFgMskVec: 当前帧步骤(B)找到的初始前景(可能是新人,可能不)
+	//@param 新的 fgMaskVec
+	//@param moveMaskMat, 运动前景蒙板，目前用 MOG2
+	vector<Mat> trackingNoMove(Mat dmat, const vector<Mat> &prevFgMaskVec, const vector<Mat> &currFgMskVec, int noMoveThresh = 55, Mat moveMaskMat = Mat(), bool debugDraw = false);
 
 	//若某mask中包含多个孤立连通区域，则将其打散为多个mask
 	//e.g., 两人拉手时tracking成为一个mask，【XY视图】分离时mask也应打散；
@@ -234,12 +247,21 @@ namespace zc{
 	//返回 contours[contIdx] 对应的top-down-view 上的 XZ-bbox
 	Rect contour2XZbbox(Mat dmat, vector<vector<Point>> &contours, int contIdx);
 
+	vector<Mat> separateMasksMoving(Mat dmat, vector<Mat> &inMaskVec, bool debugDraw = false);
+
 #if CV_VERSION_MAJOR >= 3
+	//@deprecated 改用 seedBgsMOG2
 	//尝试从findFgMasksUseBbox 剥离解耦
 	//用 MOG2 背景减除，得到前景点， erode 得到比较大的前景区域
 	//注：
 	//1. 用到时序信息(history)！一次循环中尽量避免多次调用；如必须，置位 isNewFrame = false
 	Mat seedUseBGS(Mat &dmat, bool isNewFrame = true, bool usePre = false, bool debugDraw = false);
+
+	//@deprecated 因为 isNewFrame传参很可能用错，设计更改为主循环中仅做一次MOG2
+	//@brief seedUseBGS 重写
+	//@param erodeRadius: if >0, erode; if ==0, don't erode
+	//@note 1. 用到时序信息(history)！一次循环中尽量避免多次调用；如必须，置位 isNewFrame = false
+	Mat seedBgsMOG2(const Mat &dmat, bool isNewFrame = true, int erodeRadius = 2, bool debugDraw = false, OutputArray _debug_mat = noArray());
 
 	//用 opencv300 background-subtraction 方法提取运动物体（不必是人,e.g.:转椅）轮廓
 	//1. bgs -> roi; 2. region-grow -> vector<Mat>; 3. bbox etc. 判定; 4. usePre 时序上，重心判定
@@ -247,32 +269,56 @@ namespace zc{
 	vector<Mat> findFgMasksUseBGS(Mat &dmat, bool usePre = false, bool debugDraw = false, OutputArray _debug_mat = noArray());
 #endif
 
-	//在前一帧找到的前景mask范围内，前后帧深度值变化不大(diff < thresh)的像素点，作为新候选点。
-	//返回新候选点mask
+	//在【前一帧】找到的前景mask范围内，前后帧深度值变化不大(diff < thresh)的像素点，作为新候选点。
+	//@return 新候选点mask
 	Mat seedNoMove(Mat dmat, Mat mask, int thresh = 50);
-	vector<Mat> seedNoMove(Mat dmat, vector<Mat> masks, int thresh = 50);
+	vector<Mat> seedNoMove(Mat dmat, vector<Mat> maskVec, int thresh = 50);
 
 	//@Overload
 	vector<Point> seedNoMove(Mat dmat, vector<Point> sdVec, int thresh = 50);
 
 	vector<vector<Point>> seedNoMove(Mat dmat, vector<vector<Point>> sdVov, int thresh = 50);
-		
 
-	//返回不同灰度标记前景的mat
+	Mat testMOG2Func(Mat dmat, int history = 100, double varThresh = 1, double learnRate = -1);
+
+	//@deprecated	---------------2015年7月10日23:17:59 有问题！ 帧循环过程中不应多次调用！设计问题。不应static pMOG2
+	//@brief 用 (MOG2运动检测 | seedNoMove不动点检测)，产生一个有效前景蒙板
+	//@param prevFgMaskVec 【前一帧】找到的前景们; from seedNoMove
+	//@param noMoveThresh: 不动阈值(mm), 默认50mm; from seedNoMove
+	//@param history: opencv-MOG2 相关
+	//@param varThresh: opencv-MOG2 相关
+	//@param learnRate: opencv-MOG2 相关
+	Mat maskMoveAndNoMove(Mat dmat, vector<Mat> prevFgMaskVec, int noMoveThresh = 50, int history = 100, double varThresh = 1, double learnRate = -1, bool debugDraw = false, OutputArray _debug_mat = noArray());
+
+	//@brief moveMask 传入运动检测得到的FG; 目前暂用 MOG2结果
+	//实际上应该每个mask单独长成一个new-mask, 此处简化测试, N个长成一个:
+	Mat maskMoveAndNoMove(Mat dmat, Mat moveMask, vector<Mat> prevFgMaskVec, int noMoveThresh = 50, bool debugDraw = false, OutputArray _debug_mat = noArray());
+
+	//@debugging
+	//@brief 返回不同灰度标记前景的mat
 	Mat getHumansMask(vector<Mat> masks, Size sz);
 
-	//用全局的 vector<HumanFg> 画一个彩色 mask mat:
-	Mat getHumansMask(Mat dmat, const vector<HumanFg> &humVec);
+	//@debugging
+	//@brief 用全局的 vector<HumanObj> 画一个彩色 mask mat:
+	Mat getHumansMask(Mat dmat, const vector<HumanObj> &humVec);
+
+	//@brief 类似getHumansMask， 但转到tdview， 彩色绘制：
+	Mat getHumansMask2tdview(Mat dmat, const vector<HumanObj> &humVec);
+
+	vector<Mat> humVec2tdviewVec(Mat dmat, const vector<HumanObj> &humVec);
 
 	//应有粘性跟踪能力，多人场景下，uid不应突变
 	//跟踪(更新)策略为：
 	//某蒙板与当前某 humObj蒙板求交区域深度变化均值较小
-	void getHumanObjVec(Mat &dmat, vector<Mat> fgMasks, vector<HumanFg> &outHumVec);
+	void getHumanObjVec(Mat &dmat, vector<Mat> fgMasks, vector<HumanObj> &outHumVec);
 
-	class HumanFg
+	//@brief 输入单帧原始深度图， 得到最终 vec-mat-mask. process/run-a-frame
+	vector<Mat> getFgMaskVec(Mat &dmat, int fid, bool debugDraw = false);
+
+	class HumanObj
 	{
 	public:
-		HumanFg(const Mat &dmat_, Mat currMask_, int humId);
+		HumanObj(const Mat &dmat_, Mat currMask_, int humId);
 
 		//若成功， 更新 this各项； 否则，返回false，用于表示跟丢，准备删除此对象
 		bool updateDmatAndMask(const Mat &dmat, const vector<Mat> &fgMaskVec, vector<bool> &mskUsedFlags);
@@ -346,7 +392,7 @@ namespace zc{
 				return Point(-1, -1);
 		}//getContMassCenter
 
-	};//class HumanFg
+	};//class HumanObj
 
 	//@deprecated
 	//假定origMasks里没有全黑mat，否则出错！
@@ -382,7 +428,7 @@ namespace zc{
 #pragma region //孙国飞头部种子点
 
 	//单例模式，返回单例指针
-	sgf::segment* loadSeedHeadConf(const char *confFn, const char *templFn);
+	sgf::segment* loadSeedHeadConf(const char *confFn = "./sgf_seed/config.txt", const char *templFn = "./sgf_seed/headtemplate.bmp");
 
 	//孙国飞实现的头部种子点方法
 	vector<Point> seedHead(const Mat &dmat, bool debugDraw = false);
@@ -395,12 +441,14 @@ namespace zc{
 
 }//namespace zc
 
-using zc::HumanFg;
+using zc::HumanObj;
 
 //---------------测试代码放这里
 namespace zc{
 	Mat getLaplaceEdgeKrnl(size_t krnlSz = 5);
 
+	//@brief 以 krnlSz 为核， getLaplaceEdgeKrnl， 然后卷积
+	//然并卵！
 	Mat getLaplaceEdgeFilter2D(const Mat &dmat, size_t krnlSz = 5);
 
 	//@brief 根据krnlSz邻域内非零点个数 N 填充空洞, 若 N > countThresh, 填充邻域均值
@@ -409,6 +457,66 @@ namespace zc{
 	//@note 效率： 1. 默认参数, qvga~8ms; 2. hasSideEffect==true, qvga~11ms; 3. krnlSz=3, countThresh=2 几乎无效率影响
 	Mat holeFillNbor(const Mat &dmat, bool hasSideEffect = false, size_t krnlSz = 5, int countThresh = 3);
 
+#pragma region //接要求, 自己实现帧差法背景减除MyBGSubtractor:
+
+	//用history长度的历史窗口（不含当前帧）做平滑，与当前帧做差，若 >diffThresh，算作前景
+	class MyBGSubtractor
+	{
+	public:
+		MyBGSubtractor();
+		MyBGSubtractor(int history, int diffThresh);
+		~MyBGSubtractor();
+
+
+		Mat apply(const Mat &currFrame);
+
+		Mat getBgMat();
+
+	private:
+		//@brief frame 入队， 然后重新计算avg-frame做背景
+		void addToHistory(const Mat &frame32f);
+
+		queue<Mat> _historyFrames;
+
+		//@brief _historyFrames 长度上限，即capacity
+		int _history;
+		int _diffThresh;
+
+		//@brief cv8u, or 16u?
+		//Mat _bgMat;
+
+		//@brief cv32f
+		Mat _bgMat32f;
+
+		//@brief cv8u
+		Mat _fgMask;
+	};//MyBGSubtractor
+#pragma endregion //接要求, 自己实现帧差法背景减除MyBGSubtractor
+
+	//@brief 对每个move-mask, X轴向上Y值统计直方图
+	//@param humVec: vec-HumanObj, 仅用HumanObj的颜色信息
+	//@param moveMaskVec： vec-mask-mat, 每个HumanObj对应区域内的“运动区域”mask
+	//@return 彩色 histo-mat， N个直方图画在同一个mat上
+	Mat getHumVecMaskHisto(Mat dmat, vector<HumanObj> humVec, vector<Mat> moveMaskVec, bool debugDraw = false);
+
+
+	//@brief 对 maskMat 统计X轴向上Y值统计直方图, 用color绘制
+	//@return 一个彩色 histo-mat
+	Mat getMaskXyHisto(Mat dmat, Mat maskMat, Scalar color, bool debugDraw = false);
+
+	//@brief 各个像素历史最大深度值
+	//@return max-depth-mat
+	Mat& getMaxDmat(Mat &dmat, bool debugDraw = false);
+
+	//@brief 使用新一帧【更新】各个像素历史最大深度值
+	//@return max-depth-mat
+	Mat updateMaxDmat(Mat &dmat, bool debugDraw = false);
+
+	//@brief 利用maxDmat，稳定背景做diff，扣除鬼影；利用maxDmat-MOG，扣除伪鬼影
+	Mat  getMaxDepthBgMask(Mat dmat, bool debugDraw = false);
+
 }//zc
+
+using zc::MyBGSubtractor;
 
 #endif //_SIMPLE_SILHOUETTE_

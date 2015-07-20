@@ -93,7 +93,7 @@ void nmhSilhouAndSklt( Mat &dm, int fid ){
 	//cout<<"simpleRegionGrow.t: "<<clock()-begt<<endl;
 	rgSumt += (clock()-begt);
 	if(ZC_WRITE)
-		imwrite("simpFlagMat_"+std::to_string((long long) (long long)fid)+".jpg", fgMsk);
+		imwrite("simpFlagMat_"+std::to_string((long long)fid)+".jpg", fgMsk);
 
 
 	//兼容林驰代码：
@@ -140,14 +140,14 @@ void main(int argc, char **argv){
 
 	const char *oniFname = "E:/oni_data/oni132x64/zc-walk-wo-feet-qvga.oni";
 	oniFname = "E:/oni_data/oni132_orig/sun_han_short.oni";
-	oniFname = "E:/oni_data/oni132x64/sgf_zc_w_feet.oni";
-	oniFname = "E:/oni_data/oni132x64/sgf_zc_w_feet-190-3xx.oni";
-	oniFname = "E:/oni_data/oni132x64/sgf_zc_w_feet-650-776.oni";
+// 	oniFname = "E:/oni_data/oni132x64/sgf_zc_w_feet.oni";
+// 	oniFname = "E:/oni_data/oni132x64/sgf_zc_w_feet-190-3xx.oni";
+// 	oniFname = "E:/oni_data/oni132x64/sgf_zc_w_feet-650-776.oni";
 // 	//oniFname = "E:/oni_data/oni132x64/sgf_zc_w_feet-372-591.oni";
 // 	
 	//oniFname = "E:/oni_data/oni132x64/sgf-zc-sit-front-desk.oni";
 // 	oniFname = "E:/oni_data/oni132x64/sgf-zc-sit-low-front-desk-wall.oni";
-	//oniFname = "E:/oni_data/oni132x64/sgf-zc-sit-no-front-desk-wall.oni";
+	oniFname = "E:/oni_data/oni132x64/sgf-zc-sit-no-front-desk-wall.oni";
 // 	oniFname = "E:/oni_data/oni132_orig/zc-indoor_sit.oni";
 //  	oniFname = "E:/oni_data/oni132_orig/zc-indoor_sit2.oni";
 
@@ -159,14 +159,15 @@ void main(int argc, char **argv){
 	
 	//oniFname = "E:/oni_data/oni132x64/zc-walk-wo-feet-qvga-107x.oni";
 		//oniFname = "E:/oni_data/oni132_orig/zc_indoor_walk.oni";
-	// 	oniFname = "E:/oni_data/oni132_orig/zc_indoor_walk-last.oni";
+// 	 	oniFname = "E:/oni_data/oni132_orig/zc_indoor_walk-last.oni";
 	// 	oniFname = "E:/oni_data/oni132x64/zc-stand-w-feet.oni";
 	//oniFname = "E:/oni_data/oni132x64/zc-stand-wo-feet-qvga.oni";
-	oniFname = "E:/oni_data/oni132_orig/zc_indoor_stand.oni";
+// 	oniFname = "E:/oni_data/oni132_orig/zc_indoor_stand.oni";
 
 	xn::Player plyr;
 	rc = ctx.OpenFileRecording(oniFname, plyr);
-	plyr.SeekToFrame("Depth1", std::stoi(argv[1]), XN_PLAYER_SEEK_SET);
+	int frameOffset = std::stoi(argv[1]);
+	plyr.SeekToFrame("Depth1", frameOffset, XN_PLAYER_SEEK_SET);
 	plyr.SetRepeat(string(argv[2])=="true"); //放在 OpenFileRecording 之后才有效
 	if(!checkOpenNIError(rc, "ctx.OpenFileRecording"))
 		return;
@@ -557,6 +558,7 @@ void main(int argc, char **argv){
 
 #ifdef CAPG_SKEL_VERSION_0_9 //对应 ZC_CLEAN
 #pragma region //一些测试
+
 		//---------------测试高度计算
 		Mat htMap0 = zc::calcHeightMap0(dmat);
 		Mat htMap = zc::calcHeightMap1(dmat);
@@ -567,6 +569,17 @@ void main(int argc, char **argv){
 			htMap.convertTo(htMap_show, CV_8U, 1.* UCHAR_MAX / maxHt);
 			imshow("htMap0_show", htMap0_show);
 			imshow("htMap_show", htMap_show);
+		}
+
+		//---------------测试转到 top-down-view
+		{
+			Mat flrApartMask = zc::fetchFloorApartMask(dmat, false);
+			Mat maskedDmat_no_flr = dmat.clone();
+			maskedDmat_no_flr.setTo(0, (flrApartMask == 0));
+			Mat tdview = zc::dmat2tdview_core(maskedDmat_no_flr);
+			imshow("tdview", tdview);
+			tdview.convertTo(tdview, CV_8U);
+			imshow("tdview", tdview);
 		}
 
 #pragma endregion //一些测试
@@ -582,17 +595,16 @@ void main(int argc, char **argv){
 		//A.去除背景 & 地面：
 		Mat bgMsk = zc::fetchBgMskUseWallAndHeight(dmat);
 		Mat flrApartMask = zc::fetchFloorApartMask(dmat, false);
-		Mat maskedDmat = dmat.clone();
-		maskedDmat.setTo(0, bgMsk | (flrApartMask == 0));
+		Mat maskedDmat_no_wall_flr = dmat.clone();
+		maskedDmat_no_wall_flr.setTo(0, bgMsk | (flrApartMask == 0));
 		//只去地面，不去掉墙：
-		//maskedDmat.setTo(0, flrApartMask == 0);
-		cout << "aaa.maskedDmat.ts: " << clock() - begt << endl;
+		//maskedDmat_no_wall_flr.setTo(0, flrApartMask == 0);
+		cout << "aaa.maskedDmat_no_wall_flr.ts: " << clock() - begt << endl;
 		if (ZC_DEBUG_LV1){
-			Mat maskedDmat_show;
-			normalize(maskedDmat, maskedDmat_show, 0, UCHAR_MAX, NORM_MINMAX, CV_8UC1);
-			imshow("atmp-maskedDmat", maskedDmat_show);
+			Mat maskedDmat_no_wall_flr_show;
+			normalize(maskedDmat_no_wall_flr, maskedDmat_no_wall_flr_show, 0, UCHAR_MAX, NORM_MINMAX, CV_8UC1);
+			imshow("atmp-maskedDmat_no_wall_flr", maskedDmat_no_wall_flr_show);
 		}
-
 
 		//B.初步找前景，初始化，此处用的bbox方法：
 		begt = clock();
@@ -603,18 +615,41 @@ void main(int argc, char **argv){
 #if 0 //XY-XZ-bbox 联合判定
 		vector<vector<Point>> sdBboxVov = zc::seedUseBboxXyXz(maskedDmat, ZC_DEBUG_LV1, tmp);
 		vector<Mat> fgMskVec = zc::simpleRegionGrow(maskedDmat, sdBboxVov, rgThresh, flrApartMask, false);
-#elif 1 //头身联合判定
-		const char *sgfConfigFn = "d:/Users/zhangxaochen/Desktop/SenseKitSDK-0.1.4-20150424T043853Z-win32/samples/plugins/orbbec_skeleton/sgf_seed/config.txt";
-		const char *sgfTempl = "D:/Users/zhangxaochen/Desktop/SenseKitSDK-0.1.4-20150424T043853Z-win32/samples/plugins/orbbec_skeleton/sgf_seed/headtemplate.bmp";
-		zc::loadSeedHeadConf(sgfConfigFn, sgfTempl);
-
+#elif 0 //头身联合判定
 		vector<vector<Point>> sdHeadBodyVov = zc::seedUseHeadAndBodyCont(dmat, ZC_DEBUG_LV1, tmp);
 		vector<Mat> fgMskVec = zc::simpleRegionGrow(maskedDmat, sdHeadBodyVov, rgThresh, flrApartMask, false);
+#elif 1 //MOG2 运动检测方法
+		{
+			Mat dmat8u;
+			dmat.convertTo(dmat8u, CV_8U, 1.*UCHAR_MAX / MAX_VALID_DEPTH);
 
-		//调试显示：
-		zc::seedHead(dmat, true);
+			int noMoveThresh = 100;
+			int history = 100;
+			double varThresh = 1;
+			double learnRate = -0.005;
+			//Mat tmp;
+// 			Mat testMsk = zc::maskMoveAndNoMove(dmat, prevMaskVec, noMoveThresh, history, varThresh, learnRate, ZC_DEBUG_LV1, tmp);
 
-#endif
+			bool detectShadows = false;
+			static Ptr<BackgroundSubtractorMOG2> pMog2 = createBackgroundSubtractorMOG2(history, varThresh, detectShadows);
+			Mat fgMskMog2;
+			pMog2->apply(dmat8u, fgMskMog2);
+
+			imshow("test0", fgMskMog2);
+		}
+
+		bool isNewFrame = true;
+		int erodeRadius = 13;
+		Mat sdMoveMat = zc::seedBgsMOG2(dmat, isNewFrame, erodeRadius, ZC_DEBUG_LV1, tmp);
+		if (ZC_DEBUG_LV1){
+			imshow("sdMoveMat", sdMoveMat);
+			//imshow("seedBgsMOG2", tmp); //_debug_mat 没用，暂时放着
+		}
+
+		rgThresh = 55;
+		bool getMultiMasks = true;
+		vector<Mat> fgMskVec = zc::simpleRegionGrow(maskedDmat, sdMoveMat, rgThresh, flrApartMask, getMultiMasks);
+#endif //N种初步增长方法
 
 		cout << "bbb.findFgMasksUseBbox.ts: " << clock() - begt << endl;
 		if (ZC_DEBUG_LV1){
@@ -671,8 +706,8 @@ void main(int argc, char **argv){
 			// 			cv::addText(humMsk, "some-text", { 55, 55 }, font);
 			putText(humMsk, "fid: " + to_string((long long) fid), Point(0, 30), FONT_HERSHEY_PLAIN, 1, 255);
 			imshow("humMsk", humMsk);
-			if (ZC_WRITE)
-				imwrite("humMsk_" + std::to_string((long long) (long long)fid) + ".jpg", humMsk);
+			//if (ZC_WRITE)
+			//	imwrite("humMsk_" + std::to_string((long long)fid) + ".jpg", humMsk);
 		}
 
 		zc::getHumanObjVec(dmat, fgMskVec, humVec);
@@ -686,14 +721,13 @@ void main(int argc, char **argv){
 			putText(humMsk彩色, "humVec.size: " + to_string((long long) humVec.size()), Point(0, 50), 
 				FONT_HERSHEY_PLAIN, 1, Scalar(255, 255, 255));
 
-			imshow("humMsk-color", humMsk彩色);
-			if (ZC_WRITE)
-				imwrite("humMsk-color_" + std::to_string((long long) (long long)fid) + ".jpg", humMsk彩色);
-
 			//绘制多人骨骼：
 			Mat skCanvas = Mat::ones(dmat.size(), CV_8UC1)*UCHAR_MAX;
-			zc::drawSkeletons(skCanvas, humVec, -1);
-			imshow("skCanvas", skCanvas);
+			zc::drawSkeletons(humMsk彩色, humVec, -1);
+			imshow("humMsk-color", humMsk彩色);
+			if (ZC_WRITE)
+				imwrite("humMsk-color_" + std::to_string((long long)fid) + ".jpg", humMsk彩色);
+
 		}
 
 		//必须： 更新 prevDmat
@@ -714,12 +748,21 @@ void main(int argc, char **argv){
 			isManually = !isManually;
 			break;
 		case 'r': //reset
-			plyr.SeekToFrame("Depth1", 0, XN_PLAYER_SEEK_SET);
+			plyr.SeekToFrame("Depth1", frameOffset, XN_PLAYER_SEEK_SET);
 			prevMaskVec.clear();
 			humVec.clear();
-
 			break;
 
+		case 'b':
+			cout << "Enter a number to set the begin index:" << endl;
+			cin >> frameOffset;
+			if (cin.fail()){
+				cin.clear();
+				cin.ignore();
+
+				frameOffset = 0;
+			}
+			break;
 		}//switch
 
 		if(isExit)
