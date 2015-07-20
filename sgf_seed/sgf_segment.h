@@ -46,8 +46,11 @@ namespace sgf
 		//根据找到区域的轮廓进行进一步分割，用来对坐姿下的被增长在一起的人进行分割
 		std::vector<cv::Point> get_seperate_points(const cv::Mat&,bool showResult=false,bool Delay=false);
 		std::vector<cv::Mat> get_seperate_masks(const cv::Mat&,bool showresult=false,bool Delay=false);
+		//根据区域内MOG的结果，统计前景点（动点）个数，通过直方图峰值和种子点位置联合分割
+		std::vector<cv::Mat> get_seperate_masks(const cv::Mat&,const cv::Mat&,std::vector<cv::Point> headPoints=std::vector<cv::Point>(),std::vector<double> headSize=std::vector<double>(),bool showResult=false,bool drawHist=false,bool Delay=false);
 	private:
 		std::vector<cv::Point2i> get_seed();
+		std::vector<double> get_headSize();
 		std::vector<cv::Point2i> get_seed_raw();
 		void fill_holes();
 		void show_difference();

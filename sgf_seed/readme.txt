@@ -16,3 +16,13 @@ result=seg.seedmethod2(dmat);
 
 使用方法：
 vector<Mat> res=seg.get_seperate_masks(mask)
+
+新的get_seperate_mask函数
+vector<Mat> res=seg.get_seperate_masks(mask,mog_fgmask,vector<Point> head_location,vector<double> headSize)
+
+mask是前景区域
+mog_fgmask是mog得到的前景区域
+head_location是头部点的位置，通过seg.get_seed_raw()获得
+headSize是对应的头部大小，通过seg.get_headSize()获得
+
+所有的函数，都要先使用result=seg.seedmethod1(dmat)，来计算得到所有成员变量的值

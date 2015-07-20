@@ -239,13 +239,20 @@ vector<Point> segment::seed_method1(cv::Mat dmat,bool showResult/* =false */,boo
 	cout<<name<<endl;
 
 	Mat fg_depth;
+#ifdef CV_VERSION_EPOCH
 	my_MOG.operator()(gray_map, fg_depth, 0.005);
+#elif CV_VERSION_MAJOR >= 3
+	//TODO: cv3
+#endif //CV_VERSION_EPOCH
 	imshow("foeground mask",fg_depth);waitKey(1);
+
+	//根据区域内动点个数进行分割长在一起的人
+	vector<Mat> res_tmp=get_seperate_masks(region_grow_map,fg_depth,headpoints_location,headpoints_radius,true,true);
 
 	/*--------*/
 	//寻找轮廓的极值点，用来分割长在一起的人
 	int t=clock();
-	vector<Mat> Masks=get_seperate_masks(region_grow_map,true);
+	//vector<Mat> Masks=get_seperate_masks(region_grow_map,true);
 	/*--------*/
 	
 	if (showTime)
@@ -957,15 +964,15 @@ void segment::display()
 {
 // 	if (show_result)
 // 	{	
-		imshow("result",interest_point);
-		waitKey(1);
+// 		imshow("result",interest_point);
+// 		waitKey(1);
 // 		imshow("result of raw headpoints",interest_point_raw);
 // 		waitKey(1);
 // 		imshow("result with thresh ckb",interest_point1);
 // 		waitKey(1);
 		imshow("result",interest_point2);
 		waitKey(1);
-		//imwrite(name+".jpg",interest_point2);
+		imwrite("headPoints_"+name+".jpg",interest_point2);
 // 		imshow("result with all methods",interest_point4);
 // 		waitKey(1);
 // 		imshow("result with thresh ckb and headsize",interest_point3);
@@ -1305,17 +1312,21 @@ vector<Point2i> segment::get_seed_raw()
 {
 	return headpoints_location;
 }
+vector<double> segment::get_headSize()
+{
+	return headpoints_radius;
+}
 vector<Point2i> segment::get_seed()
 {
 	return headpoints_location_1;
 }
 void segment::useMOG()
 {
-	imshow("raw image",gray_map);waitKey(1);
+	imshow("raw image",depth_map);waitKey(1);
 	//BackgroundSubtractorMOG2 bgMOG(10, 2, false );
 	Mat fg_depth;
 #ifdef CV_VERSION_EPOCH
-	my_MOG.operator()(gray_map, fg_depth, 0.005);
+	my_MOG.operator()(depth_map, fg_depth, 0.005);
 #elif CV_VERSION_MAJOR >= 3
 	//TODO: cv3
 #endif //CV_VERSION_EPOCH
@@ -1481,9 +1492,9 @@ vector<Mat> segment::get_seperate_masks(const Mat& M,bool showResult,bool Delay)
 	Point p_left,p_right;
 	Point p_top,p_down;
 	int index_left,index_right;
-	p_left.x=region_grow_map.cols;
+	p_left.x=tmp.cols;
 	p_right.x=0;
-	p_top.y=region_grow_map.cols;
+	p_top.y=tmp.cols;
 	p_down.y=0;
 	int size_p=P.size();
 	int num=size_p/20;
@@ -1522,7 +1533,7 @@ vector<Mat> segment::get_seperate_masks(const Mat& M,bool showResult,bool Delay)
 		Point p=P[i];
 		bool is_min=true;
 		bool is_max=true;
-		int min_y=region_grow_map.rows;
+		int min_y=tmp.rows;
 		for (int j=1;j<=num;++j)
 		{
 			if (p.y>P[(i+j)%size_p].y||p.y>P[(i-j+size_p)%size_p].y)
@@ -1574,26 +1585,26 @@ vector<Mat> segment::get_seperate_masks(const Mat& M,bool showResult,bool Delay)
 	{
 		if (showResult)
 		{
-			imshow("demo show seperate region",region_grow_map);
-			imwrite("seperate_mask_"+name+".jpg",region_grow_map);
+			imshow("demo show seperate region",M);
+			imwrite("seperate_mask_"+name+".jpg",M);
 			if (Delay)
 				waitKey(0);
 			else
 				waitKey(1);
 		}
-		Masks.push_back(region_grow_map.clone());
+		Masks.push_back(M.clone());
 		return Masks;
 	}
 	int color_1=255/(local_minimum.size()+1);
 	int color_2=1;
-	Mat demo_show=Mat::zeros(region_grow_map.rows,region_grow_map.cols,CV_8U);
+	Mat demo_show=Mat::zeros(tmp.rows,tmp.cols,CV_8U);
 	//根据每一个最小值点，将原始mask分成很多小块
 	if (local_minimum.size()>=1)
 	{
 		//先把最左边分开
 		vector<vector<Point>> c;
 		vector<Point> contour;
-		Mat mask=Mat::zeros(region_grow_map.rows,region_grow_map.cols,CV_8U);
+		Mat mask=Mat::zeros(tmp.rows,tmp.cols,CV_8U);
 		Point p_mid1,p_mid2;
 		int index_mid1,index_mid2;
 		p_mid1=P[local_min_index[0]];index_mid1=local_min_index[0];
@@ -1619,7 +1630,7 @@ vector<Mat> segment::get_seperate_masks(const Mat& M,bool showResult,bool Delay)
 		{
 		c.push_back(contour);
 		drawContours(mask,c,-1,255,CV_FILLED);
-		mask=mask&region_grow_map;
+		mask=mask&M;
 		demo_show.setTo(color_1*color_2,mask);++color_2;
 		/*drawContours(demo_show,c,-1,color_1*color_2,CV_FILLED);++color_2;*/
 // 		if (showResult)
@@ -1632,7 +1643,7 @@ vector<Mat> segment::get_seperate_masks(const Mat& M,bool showResult,bool Delay)
 		//中间部分分开
 		for (int i=0;i<local_minimum.size()-1;++i)
 		{
-			mask=Mat::zeros(region_grow_map.rows,region_grow_map.cols,CV_8U);
+			mask=Mat::zeros(tmp.rows,tmp.cols,CV_8U);
 			c.clear();
 			contour.clear();
 
@@ -1661,7 +1672,7 @@ vector<Mat> segment::get_seperate_masks(const Mat& M,bool showResult,bool Delay)
 			{
 			c.push_back(contour);
 			drawContours(mask,c,-1,255,CV_FILLED);
-			mask=mask&region_grow_map;
+			mask=mask&M;
 			demo_show.setTo(color_1*color_2,mask);++color_2;
 			/*drawContours(demo_show,c,-1,color_1*color_2,CV_FILLED);++color_2;*/
 // 			if (showResult)
@@ -1673,7 +1684,7 @@ vector<Mat> segment::get_seperate_masks(const Mat& M,bool showResult,bool Delay)
 		}
 
 		//最右边分开
-		mask=Mat::zeros(region_grow_map.rows,region_grow_map.cols,CV_8U);
+		mask=Mat::zeros(tmp.rows,tmp.cols,CV_8U);
 		c.clear();
 		contour.clear();
 		for (int j=index_mid1;j!=index_mid2;j=(j+flag+size_p)%size_p)
@@ -1691,7 +1702,7 @@ vector<Mat> segment::get_seperate_masks(const Mat& M,bool showResult,bool Delay)
 		{
 		c.push_back(contour);
 		drawContours(mask,c,-1,255,CV_FILLED);
-		mask=mask&region_grow_map;
+		mask=mask&M;
 		demo_show.setTo(color_1*color_2,mask);++color_2;
 		/*drawContours(demo_show,c,-1,color_1*color_2,CV_FILLED);++color_2;*/
 // 		if (showResult)
@@ -1711,4 +1722,187 @@ vector<Mat> segment::get_seperate_masks(const Mat& M,bool showResult,bool Delay)
 			waitKey(1);
 	}
 	return Masks;
+}
+vector<Mat> segment::get_seperate_masks(const cv::Mat& fgMask,const cv::Mat& mogMask,vector<Point> headPoints,std::vector<double> headSize,bool showResult/* =false */,bool drawHist/* =false */,bool Delay/* =false */)
+{
+	//首先统计fgMask中每条竖线上的前景点个数
+	Mat mog_in_fg=fgMask&mogMask;
+	vector<int> points;
+	for (int i=0;i<mog_in_fg.cols;++i)
+	{
+		int num=0;
+		for (int j=0;j<mog_in_fg.rows;++j)
+		{
+			if (mog_in_fg.at<uchar>(j,i)!=0)
+			{
+				++num;
+			}
+		}
+		points.push_back(num);
+		//cout<<num<<endl;
+	}
+	//画出上述统计点的直方图
+	if (drawHist)
+	{
+		imshow("motion points",mog_in_fg);waitKey(1);
+		imwrite("motionPoints_"+name+".jpg",mog_in_fg);
+		Mat hist=Mat::zeros(mog_in_fg.rows,mog_in_fg.cols,CV_8U);
+		for (int i=0;i<points.size();++i)
+		{
+			Point p1;p1.x=i;p1.y=mog_in_fg.rows;
+			Point p2;p2.x=i;p2.y=mog_in_fg.rows-points[i];
+			line(hist,p1,p2,255);
+		}
+		imshow("histogram of motion points in fgMask",hist);waitKey(1);
+		imwrite("mog_histogram_"+name+".jpg",hist);
+	}
+	/*
+	如何分割：
+	两种方法：
+	1、在直方图中找极大值点，从这些极大值点处直接进行分割；
+	2、利用头部点的信息，看头部点位置处直方图的点数信息，
+	   若大于一个阈值，则从头部点处往左右分割；
+	*/
+	vector<Mat> res;
+	//寻找直方图中的极大值点
+
+	//判断头部点竖线上的的动点数量并根据阈值筛掉不满足要求的头部点
+	if (headPoints.size()==0)
+	{
+		res.push_back(fgMask.clone());
+		return res;
+	}
+	vector<int> seperate_line;
+	vector<int> seperate_line_width;
+	double head_body_rate=4;
+	int pointNumberThreshold=10;
+	int pointNumber=5;
+	for (int i=0;i<headPoints.size();++i)
+	{
+		int hist_left=max(0,headPoints[i].x-5);
+		int hist_right=min(headPoints[i].x+5,int(mog_in_fg.cols)-1);
+		int num=0;
+		for (int j=hist_left;j<=hist_right;++j)
+		{
+			num+=points[j];
+		}
+		cout<<"head motion points number: "<<num<<endl;
+		num/=hist_right-hist_left+1;
+		if (num>=pointNumberThreshold)
+		{
+			seperate_line.push_back(headPoints[i].x);
+			seperate_line_width.push_back(int(headSize[i]*head_body_rate));
+		}
+	}
+	//根据seperate_line对原始的前景mask进行划分
+
+	Mat tmp=fgMask.clone();
+	vector<vector<Point> > contours;
+	findContours(tmp,contours, CV_RETR_LIST , CV_CHAIN_APPROX_NONE );
+	if (contours.size()==0)
+	{
+		cout<<"no contours find!"<<endl;
+		vector<Mat> res;
+		return res;
+	}
+	//找最大的轮廓
+	int idx=0;
+	int size_max=0;
+	for (int i=0;i<contours.size();++i)
+	{
+		if (contours[i].size()>size_max)
+		{
+			size_max=contours[i].size();
+			idx=i;
+		}
+	}
+	vector<Point> P=contours[idx];
+	//循环遍历P，找到最左边和最右边的点
+	Point p_left,p_right;
+	int index_left,index_right;
+	p_left.x=region_grow_map.cols;
+	p_right.x=0;
+	int size_p=P.size();
+	int num=size_p/20;
+	for (int i=0;i<size_p;++i)
+	{
+		if (P[i].x<p_left.x)
+		{
+			p_left=P[i];index_left=i;
+		}
+		if (P[i].x>p_right.x)
+		{
+			p_right=P[i];index_right=i;
+		}
+	}
+	//因为不知道轮廓点是顺时针还是逆时针，这里要判断一下，保证以顺时针的顺序遍历从左到右的点
+	int flag=-1;
+	int test=(index_left-1)%size_p;
+	if (P[(index_left+1+size_p)%size_p].y<P[(index_left-1+size_p)%size_p].y)
+	{
+		flag=1;
+	}
+	//确定要分割的区域的左右边界
+	int seperate_left=p_left.x,seperate_right=p_right.x;
+
+	Mat mask=Mat::zeros(fgMask.rows,fgMask.cols,CV_8U);
+	for (int i=0;i<seperate_line.size();++i)
+	{
+		int left_line=max(seperate_line[i]-seperate_line_width[i],seperate_left);
+		int right_line=min(seperate_line[i]+seperate_line_width[i],seperate_right);
+		//seperate_left=right_line;
+		Point left_top;left_top.y=0;left_top.x=left_line;
+		int index_left_top=0;
+		Point right_top;right_top.y=0;right_top.x=right_line;
+		int index_right_top=0;
+		//对分割线，开始寻找轮廓上边对应的最低的点和下边对应的最高的点
+		for (int j=index_left;j!=index_right;j=(j+flag+size_p)%size_p)
+		{
+			if (P[j].x==left_line&&P[j].y>=left_top.y)
+			{
+				left_top=P[j];
+				index_left_top=j;
+			}
+			if (P[j].x==right_line&&P[j].y>=right_top.y)
+			{
+				right_top=P[j];
+				index_right_top=j;
+			}
+		}
+		Point left_down;left_down.y=fgMask.rows;left_down.x=left_line;
+		int index_left_down=0;
+		Point right_down;right_down.y=fgMask.rows;right_down.x=right_line;
+		int index_right_down=0;
+		for (int j=index_right;j!=index_left;j=(j+flag+size_p)%size_p)
+		{
+			if (P[j].x==left_line&&P[j].y<=left_down.y)
+			{
+				left_down=P[j];
+				index_left_down=j;
+			}
+			if (P[j].x==right_line&&P[j].y<=right_down.y)
+			{
+				right_down=P[j];
+				index_right_down=j;
+			}
+		}
+		//画出该部分的轮廓
+		vector<Point> contour;
+		for (int j=index_left_top;j!=index_right_top;j=(j+flag+size_p)%size_p)
+		{
+			contour.push_back(P[j]);
+		}
+		//contour.push_back(right_top);
+		for (int j=index_right_down;j!=index_left_down;j=(j+flag+size_p)%size_p)
+		{
+			contour.push_back(P[j]);
+		}
+		//contour.push_back(left_down);
+		vector<vector<Point>> c;c.push_back(contour);
+		drawContours(mask,c,-1,255,CV_FILLED);
+		res.push_back(mask);
+	}
+	imshow("seperate mask",mask);waitKey(1);
+	imwrite("seperate_mask_"+name+".jpg",mask);
+	return res;
 }
