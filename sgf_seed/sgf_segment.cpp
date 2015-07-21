@@ -1636,6 +1636,7 @@ vector<Mat> segment::get_seperate_masks(const Mat& M,bool showResult,bool Delay)
 		int index_mid1,index_mid2;
 		p_mid1=P[local_min_index[0]];index_mid1=local_min_index[0];
 		int _c=0;
+
 		for (int j=local_min_index[0];;j=(j-flag+size_p)%size_p)
 		{
 			Point p=P[j];
@@ -1648,6 +1649,7 @@ vector<Mat> segment::get_seperate_masks(const Mat& M,bool showResult,bool Delay)
 			++_c;
 			if (_c>size_p)
 			{
+				p_mid2=p;index_mid2=j;
 				break;
 			}
 			
