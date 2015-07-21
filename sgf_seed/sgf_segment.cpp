@@ -205,10 +205,16 @@ Mat segment::get_result()
 }
 vector<Point> segment::seedHeadTempMatch(cv::Mat dmat,bool showResult/* =false */,bool showTime/*=false*/,bool showDemo/*=false*/) //利用模板匹配
 {
-	set_depthMap(dmat);
+	depth_map=dmat.clone();
+	depth_map.convertTo(depth_map,CV_32FC1);
+	double dmax,dmin;
+	minMaxLoc(depth_map,&dmin,&dmax);
+	max_depth=dmax;min_depth=dmin;
+	depth_map.convertTo(gray_clone,CV_8UC1,255.0/8000,0);
+	gray_map=gray_clone.clone();
+	//set_depthMap(dmat);
 	int begin=clock();
 	seperate_foot_and_ground();
-
 	compute_edge(threshold_depth_min,threshold_depth_max);
 	threshold(edge_map_thresh,edge_map_thresh,128,255,THRESH_BINARY_INV);
 
@@ -224,12 +230,13 @@ vector<Point> segment::seedHeadTempMatch(cv::Mat dmat,bool showResult/* =false *
 	find_and_draw_countours();
 	choose_and_draw_interest_region();
 
-	if (!showDemo)
-	{
+//	if (!showDemo)
+//	{
 		return headpoints_location;
-	}
+//	}
 
 	//下边是自己的区域增长和分割
+/*
 	region_grow_map=Mat::zeros(distance_map.rows,distance_map.cols,CV_8U);
 	mask_of_distance=Mat::zeros(distance_map.rows,distance_map.cols,CV_8U);
 	for (int i=0;i<headpoints_location.size();++i)
@@ -270,11 +277,14 @@ vector<Point> segment::seedHeadTempMatch(cv::Mat dmat,bool showResult/* =false *
 	//根据区域内动点个数进行分割长在一起的人
 	vector<Mat> res_tmp=get_seperate_masks(region_grow_map,fg_depth,headpoints_location,headpoints_radius,true,true);
 
-	/*--------*/
+
 	//寻找轮廓的极值点，用来分割长在一起的人
 	int t=clock();
 	vector<Mat> Masks=get_seperate_masks(region_grow_map,true);
-	/*--------*/
+
+	//区域内动点数量以及头部联合给出初始mask
+	vector<Mat> Masks_initial=findfgMasksMovingHead(fg_depth,headpoints_location,headpoints_radius);
+
 	
 	if (showTime)
 	{
@@ -285,7 +295,7 @@ vector<Point> segment::seedHeadTempMatch(cv::Mat dmat,bool showResult/* =false *
 	{
 		display();
 	}
-	return headpoints_location;
+	return headpoints_location;*/
 }
 vector<Point> segment::seed_method2(cv::Mat dmat,bool showResult/* =false */,bool showTime/* =false */)
 {
@@ -1361,9 +1371,9 @@ void segment::useMOG()
 	imshow("foreground of MOG",fg_depth);waitKey(1);
 }
 
-vector<Point> segment::get_seperate_points(const Mat& M,bool showResult,bool Delay)
+vector<Point> segment::get_seperate_points(const Mat& fgMask,bool showResult,bool Delay)
 {
-	Mat tmp=M.clone();
+	Mat tmp=fgMask.clone();
 	vector<vector<Point> > contours;
 	findContours(tmp,contours, CV_RETR_LIST , CV_CHAIN_APPROX_NONE );
 	if (contours.size()==0)
@@ -1484,10 +1494,10 @@ vector<Point> segment::get_seperate_points(const Mat& M,bool showResult,bool Del
 	return local_minimum;
 }
 
-vector<Mat> segment::get_seperate_masks(const Mat& M,bool showResult,bool Delay)
+vector<Mat> segment::get_seperate_masks(const Mat& fgMask,bool showResult,bool Delay)
 {
 	//为避免出错（奇怪的错误），对tmp进行膨胀,避免出现一个像素宽度的轮廓
-	Mat tmp=M.clone();
+	Mat tmp=fgMask.clone();
 	int dilate_size=1;
 	Mat element1 = getStructuringElement( MORPH_RECT,
 		Size( 2*dilate_size + 1, 2*dilate_size+1 ),
@@ -1612,14 +1622,14 @@ vector<Mat> segment::get_seperate_masks(const Mat& M,bool showResult,bool Delay)
 	{
 		if (showResult)
 		{
-			imshow("demo show seperate region",M);
-			imwrite("seperate_mask_"+name+".jpg",M);
+			imshow("demo show seperate region",fgMask);
+			/*imwrite("seperate_mask_"+name+".jpg",M);*/
 			if (Delay)
 				waitKey(0);
 			else
 				waitKey(1);
 		}
-		Masks.push_back(M.clone());
+		Masks.push_back(fgMask.clone());
 		return Masks;
 	}
 	int color_1=255/(local_minimum.size()+1);
@@ -1654,12 +1664,17 @@ vector<Mat> segment::get_seperate_masks(const Mat& M,bool showResult,bool Delay)
 			}
 			
 		}
-		double area=contourArea(contour);
+		double area=0;
+		//保证contour的点的个数为0时不会出错
+		if (contour.size()!=0)
+		{
+			area=contourArea(contour);
+		}
 		if (area>total_area*area_rate)
 		{
 		c.push_back(contour);
 		drawContours(mask,c,-1,255,CV_FILLED);
-		mask=mask&M;
+		mask=mask&fgMask;
 		demo_show.setTo(color_1*color_2,mask);++color_2;
 		/*drawContours(demo_show,c,-1,color_1*color_2,CV_FILLED);++color_2;*/
 // 		if (showResult)
@@ -1696,12 +1711,16 @@ vector<Mat> segment::get_seperate_masks(const Mat& M,bool showResult,bool Delay)
 					break;
 				}
 			}
-			area=contourArea(contour);
+			area=0;
+			if (contour.size()!=0)
+			{
+				area=contourArea(contour);
+			}
 			if (area>total_area*area_rate)
 			{
 			c.push_back(contour);
 			drawContours(mask,c,-1,255,CV_FILLED);
-			mask=mask&M;
+			mask=mask&fgMask;
 			demo_show.setTo(color_1*color_2,mask);++color_2;
 			/*drawContours(demo_show,c,-1,color_1*color_2,CV_FILLED);++color_2;*/
 // 			if (showResult)
@@ -1726,12 +1745,16 @@ vector<Mat> segment::get_seperate_masks(const Mat& M,bool showResult,bool Delay)
 				break;
 			}
 		}
-		area=contourArea(contour);
+		area=0;
+		if (contour.size()!=0)
+		{
+			area=contourArea(contour);
+		}
 		if (area>total_area*area_rate)
 		{
 		c.push_back(contour);
 		drawContours(mask,c,-1,255,CV_FILLED);
-		mask=mask&M;
+		mask=mask&fgMask;
 		demo_show.setTo(color_1*color_2,mask);++color_2;
 		/*drawContours(demo_show,c,-1,color_1*color_2,CV_FILLED);++color_2;*/
 // 		if (showResult)
@@ -1744,7 +1767,7 @@ vector<Mat> segment::get_seperate_masks(const Mat& M,bool showResult,bool Delay)
 	if (showResult)
 	{
 		imshow("demo show seperate region",demo_show);
-		imwrite("seperate_mask_"+name+".jpg",demo_show);
+		/*imwrite("seperate_mask_"+name+".jpg",demo_show);*/
 		if (Delay)
 			waitKey(0);
 		else
@@ -1774,7 +1797,7 @@ vector<Mat> segment::get_seperate_masks(const cv::Mat& fgMask,const cv::Mat& mog
 	if (drawHist)
 	{
 		imshow("motion points",mog_in_fg);waitKey(1);
-		imwrite("motionPoints_"+name+".jpg",mog_in_fg);
+		/*imwrite("motionPoints_"+name+".jpg",mog_in_fg);*/
 		Mat hist=Mat::zeros(mog_in_fg.rows,mog_in_fg.cols,CV_8U);
 		for (int i=0;i<points.size();++i)
 		{
@@ -1783,7 +1806,7 @@ vector<Mat> segment::get_seperate_masks(const cv::Mat& fgMask,const cv::Mat& mog
 			line(hist,p1,p2,255);
 		}
 		imshow("histogram of motion points in fgMask",hist);waitKey(1);
-		imwrite("mog_histogram_"+name+".jpg",hist);
+		/*imwrite("mog_histogram_"+name+".jpg",hist);*/
 	}
 	/*
 	如何分割：
@@ -1815,7 +1838,7 @@ vector<Mat> segment::get_seperate_masks(const cv::Mat& fgMask,const cv::Mat& mog
 		{
 			num+=points[j];
 		}
-		cout<<"head motion points number: "<<num<<endl;
+		/*cout<<"head motion points number: "<<num<<endl;*/
 		num/=hist_right-hist_left+1;
 		if (num>=pointNumberThreshold)
 		{
@@ -1825,7 +1848,14 @@ vector<Mat> segment::get_seperate_masks(const cv::Mat& fgMask,const cv::Mat& mog
 	}
 	//根据seperate_line对原始的前景mask进行划分
 
+	//为避免出错（奇怪的错误），对tmp进行膨胀,避免出现一个像素宽度的轮廓
 	Mat tmp=fgMask.clone();
+	int dilate_size=1;
+	Mat element1 = getStructuringElement( MORPH_RECT,
+		Size( 2*dilate_size + 1, 2*dilate_size+1 ),
+		Point( dilate_size, dilate_size ) );
+	dilate( tmp,tmp,element1);
+
 	vector<vector<Point> > contours;
 	findContours(tmp,contours, CV_RETR_LIST , CV_CHAIN_APPROX_NONE );
 	if (contours.size()==0)
@@ -1932,7 +1962,54 @@ vector<Mat> segment::get_seperate_masks(const cv::Mat& fgMask,const cv::Mat& mog
 		mask=mask&fgMask;
 		res.push_back(mask);
 	}
-	imshow("seperate mask",mask);waitKey(1);
-	imwrite("seperate_mask_"+name+".jpg",mask);
+	if (showResult)
+	{
+		imshow("seperate mask",mask);waitKey(1);
+	}
+	/*imwrite("seperate_mask_"+name+".jpg",mask);*/
+	return res;
+}
+vector<Mat> segment::findfgMasksMovingHead(const cv::Mat& mog_fg,std::vector<cv::Point> headPoints/* =std::vector<cv::Point>() */,std::vector<double> headSize/* =std::vector<double>() */,int range/* =5 */,int thresh/* =10 */,bool drawResult/*=false*/)
+{	
+	vector<Mat> res;
+	//判断头部点的矩形区域内的动点数量并根据阈值筛掉不满足要求的头部点
+	if (headPoints.size()==0)
+	{
+		return res;
+	}
+	Mat res_show=Mat::zeros(mog_fg.rows,mog_fg.cols,CV_8U);
+	for (int i=0;i<headPoints.size();++i)
+	{
+		//以头部种子点和头部大小为基准，做一个矩形，并统计矩形内部mog前景点的数量
+		int _top=max(0,int(headPoints[i].y-headSize[i]));
+		int _down=mog_fg.rows;
+		int _left=max(0,int(headPoints[i].x-headSize[i]*range));
+		int _right=min(int(mog_fg.cols),int(headPoints[i].x+headSize[i]*range));
+
+		int fgPointsNumber=0;
+		Mat mask=Mat::zeros(mog_fg.rows,mog_fg.cols,CV_8U);
+		for (int j=0;j<mog_fg.rows;++j)
+		{
+			for (int k=0;k<mog_fg.cols;++k)
+			{
+				if (j>=_top&&j<_down&&
+					k>=_left&&k<_right&&
+					mog_fg.at<uchar>(j,k)!=0)
+				{
+					mask.at<uchar>(j,k)=255;
+					++fgPointsNumber;
+				}
+			}
+		}
+		if (fgPointsNumber>=thresh)
+		{
+			res.push_back(mask);
+			res_show.setTo(255,mask);
+		}
+	}
+	if (drawResult)
+	{
+		imshow("masks of mog",res_show);waitKey(1);
+	}
 	return res;
 }

@@ -119,7 +119,7 @@ plyr.SeekToFrame("MyDepth", 999, XN_PLAYER_SEEK_SET);
 			vector<Point> seed;
 			Mat mask;
 
-			seed=my_seg.head_location_method1(depth);
+			seed=my_seg.seedHeadTempMatch(depth,false,false,true);
 			//seed=my_seg.seedSGF(depth,true);
 			//seed=my_seg.seedSGF(depth,true,mask);
 
