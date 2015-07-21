@@ -37,7 +37,7 @@ namespace sgf
 		void set_name(std::string);
 		void output(string);
 		std::vector<cv::Point> seedSGF(cv::Mat dmat,bool showResult=false,bool raw_seed=false,cv::Mat& depth_without_bg=cv::Mat());
-		std::vector<cv::Point> head_location_method1(cv::Mat dmat,bool showResult=false,bool showTime=false,bool showDemo=false);
+		std::vector<cv::Point> seedHeadTempMatch(cv::Mat dmat,bool showResult=false,bool showTime=false,bool showDemo=false);
 		std::vector<cv::Point> seed_method2(cv::Mat dmat,bool showResult=false,bool showTime=false);
 		bool read_config(const std::string &configPath);
 		int accurate;
@@ -119,6 +119,7 @@ namespace sgf
 		int bg_count;
 
 		cv::Mat depth_map;
+		cv::Mat depth_map_old;
 		cv::Mat depth_mask;
 
 		cv::Mat height_map;
