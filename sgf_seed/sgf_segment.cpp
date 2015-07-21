@@ -1890,6 +1890,11 @@ vector<Mat> segment::get_seperate_masks(const cv::Mat& fgMask,const cv::Mat& mog
 		}
 	}
 	vector<Point> P=contours[idx];
+	if (P.size()==0)
+	{
+		vector<Mat> res;
+		return res;
+	}
 	//循环遍历P，找到最左边和最右边的点
 	Point p_left,p_right;
 	int index_left,index_right;
@@ -1899,11 +1904,11 @@ vector<Mat> segment::get_seperate_masks(const cv::Mat& fgMask,const cv::Mat& mog
 	int num=size_p/20;
 	for (int i=0;i<size_p;++i)
 	{
-		if (P[i].x<p_left.x)
+		if (P[i].x<=p_left.x)
 		{
 			p_left=P[i];index_left=i;
 		}
-		if (P[i].x>p_right.x)
+		if (P[i].x>=p_right.x)
 		{
 			p_right=P[i];index_right=i;
 		}
