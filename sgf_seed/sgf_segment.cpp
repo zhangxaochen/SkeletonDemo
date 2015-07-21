@@ -56,10 +56,12 @@ void segment::set_mog_par(int history,int varthreshold,bool detect_shadow,int le
 
 void segment::set_depthMap(const cv::Mat& depth)
 {
+	depth_map=depth.clone();
 	if (!has_set_depth)
 	{
-		depth_map=depth.clone();
-		//has_set_depth=true;
+		depth_map_old=depth.clone();
+		depth_map_old.convertTo(depth_map_old,CV_32FC1);
+		has_set_depth=true;
 	}
 	depth_map.convertTo(depth_map,CV_32FC1);
 	double dmax,dmin;
@@ -201,7 +203,7 @@ Mat segment::get_result()
 {
 	return interest_point2.clone();
 }
-vector<Point> segment::head_location_method1(cv::Mat dmat,bool showResult/* =false */,bool showTime/*=false*/,bool showDemo/*=false*/) //利用模板匹配
+vector<Point> segment::seedHeadTempMatch(cv::Mat dmat,bool showResult/* =false */,bool showTime/*=false*/,bool showDemo/*=false*/) //利用模板匹配
 {
 	set_depthMap(dmat);
 	int begin=clock();
@@ -246,6 +248,13 @@ vector<Point> segment::head_location_method1(cv::Mat dmat,bool showResult/* =fal
 // 		imwrite("region_grow_"+name+".jpg",region_grow_map);
 // 		cout<<name<<endl;
 	}
+
+	//根据前后两帧深度数据，进行差分（一阶导）,从而将运动区域中的背景剔除
+
+
+	//更新深度数据
+	depth_map_old=depth_map.clone();
+
 
 	Mat fg_depth;
 #ifdef CV_VERSION_EPOCH
@@ -1477,7 +1486,13 @@ vector<Point> segment::get_seperate_points(const Mat& M,bool showResult,bool Del
 
 vector<Mat> segment::get_seperate_masks(const Mat& M,bool showResult,bool Delay)
 {
+	//为避免出错（奇怪的错误），对tmp进行膨胀
 	Mat tmp=M.clone();
+	int dilate_size=1;
+	Mat element1 = getStructuringElement( MORPH_RECT,
+		Size( 2*dilate_size + 1, 2*dilate_size+1 ),
+		Point( dilate_size, dilate_size ) );
+	dilate( tmp,tmp,element1);
 	vector<vector<Point> > contours;
 	findContours(tmp,contours, CV_RETR_LIST , CV_CHAIN_APPROX_NONE );
 	if (contours.size()==0)
