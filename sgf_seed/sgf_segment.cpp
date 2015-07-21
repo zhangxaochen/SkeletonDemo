@@ -1486,7 +1486,7 @@ vector<Point> segment::get_seperate_points(const Mat& M,bool showResult,bool Del
 
 vector<Mat> segment::get_seperate_masks(const Mat& M,bool showResult,bool Delay)
 {
-	//为避免出错（奇怪的错误），对tmp进行膨胀
+	//为避免出错（奇怪的错误），对tmp进行膨胀,避免出现一个像素宽度的轮廓
 	Mat tmp=M.clone();
 	int dilate_size=1;
 	Mat element1 = getStructuringElement( MORPH_RECT,
