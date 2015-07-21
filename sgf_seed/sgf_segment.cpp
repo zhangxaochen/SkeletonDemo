@@ -214,7 +214,7 @@ vector<Point> segment::seedHeadTempMatch(cv::Mat dmat,bool showResult/* =false *
 	gray_map=gray_clone.clone();
 	//set_depthMap(dmat);
 	int begin=clock();
-	seperate_foot_and_ground();
+	//seperate_foot_and_ground();
 	compute_edge(threshold_depth_min,threshold_depth_max);
 	threshold(edge_map_thresh,edge_map_thresh,128,255,THRESH_BINARY_INV);
 
@@ -234,9 +234,9 @@ vector<Point> segment::seedHeadTempMatch(cv::Mat dmat,bool showResult/* =false *
 //	{
 		return headpoints_location;
 //	}
-
-	//下边是自己的区域增长和分割
 /*
+	//下边是自己的区域增长和分割
+
 	region_grow_map=Mat::zeros(distance_map.rows,distance_map.cols,CV_8U);
 	mask_of_distance=Mat::zeros(distance_map.rows,distance_map.cols,CV_8U);
 	for (int i=0;i<headpoints_location.size();++i)
@@ -1701,11 +1701,18 @@ vector<Mat> segment::get_seperate_masks(const Mat& fgMask,bool showResult,bool D
 
 			p_mid1=P[local_min_index[i+1]];index_mid1=local_min_index[i+1];
 
+			_c=0;
 			for (int j=index_mid2;;j=(j-flag+size_p)%size_p)
 			{
 				Point p=P[j];
 				contour.push_back(p);
 				if (p.x==P[local_min_index[i+1]].x&&p.y>P[local_min_index[i+1]].y)
+				{
+					p_mid2=p;index_mid2=j;
+					break;
+				}
+				++_c;
+				if (_c>size_p)
 				{
 					p_mid2=p;index_mid2=j;
 					break;
@@ -1735,6 +1742,7 @@ vector<Mat> segment::get_seperate_masks(const Mat& fgMask,bool showResult,bool D
 		mask=Mat::zeros(tmp.rows,tmp.cols,CV_8U);
 		c.clear();
 		contour.clear();
+		_c=0;
 		for (int j=index_mid1;j!=index_mid2;j=(j+flag+size_p)%size_p)
 		{
 			Point p=P[j];
@@ -1742,6 +1750,12 @@ vector<Mat> segment::get_seperate_masks(const Mat& fgMask,bool showResult,bool D
 			if (p.x==P[local_min_index[0]].x&&p.y>P[local_min_index[0]].y)
 			{
 				contour.push_back(P[index_mid2]);
+				break;
+			}
+			++_c;
+			if (_c>size_p)
+			{
+				p_mid2=p;index_mid2=j;
 				break;
 			}
 		}
