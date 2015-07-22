@@ -39,7 +39,7 @@ segment::segment()
 	has_set_depth=false;
 
 #ifdef CV_VERSION_EPOCH
-	my_MOG = BackgroundSubtractorMOG2(200, 20, false);
+	my_MOG = BackgroundSubtractorMOG2(30, 0.3, false);
 #elif CV_VERSION_MAJOR >= 3
 	//TODO: cv3
 #endif //CV_VERSION_EPOCH
@@ -239,9 +239,9 @@ vector<Point> segment::seedHeadTempMatch(cv::Mat dmat,bool showResult/* =false *
 //	{
 		return headpoints_location;
 //	}
-
-	//下边是自己的区域增长和分割
 /*
+	//下边是自己的区域增长和分割
+
 	region_grow_map=Mat::zeros(distance_map.rows,distance_map.cols,CV_8U);
 	mask_of_distance=Mat::zeros(distance_map.rows,distance_map.cols,CV_8U);
 	for (int i=0;i<headpoints_location.size();++i)
@@ -270,7 +270,7 @@ vector<Point> segment::seedHeadTempMatch(cv::Mat dmat,bool showResult/* =false *
 
 	Mat fg_depth;
 #ifdef CV_VERSION_EPOCH
-	my_MOG.operator()(gray_map, fg_depth, 0.005);
+	my_MOG.operator()(gray_map, fg_depth, -1);
 #elif CV_VERSION_MAJOR >= 3
 	//TODO: cv3
 #endif //CV_VERSION_EPOCH
@@ -291,11 +291,6 @@ vector<Point> segment::seedHeadTempMatch(cv::Mat dmat,bool showResult/* =false *
 	vector<Mat> Masks_initial=findfgMasksMovingHead(fg_depth,headpoints_location,headpoints_radius);
 
 	
-	if (showTime)
-	{
-		cout<<"time spend in seperating masks: "<<clock()-t<<endl;
-		cout<<"time spend:"<<clock()-begin<<endl;
-	}
 	if (showResult)
 	{
 		display();
@@ -1927,7 +1922,7 @@ vector<Mat> segment::get_seperate_masks(const cv::Mat& fgMask,const cv::Mat& mog
 		Point right_top;right_top.y=0;right_top.x=right_line;
 		int index_right_top=0;
 		//对分割线，开始寻找轮廓上边对应的最低的点和下边对应的最高的点
-		for (int j=index_left;j!=index_right;j=(j+flag+size_p)%size_p)
+		for (int j=index_left;j!=(index_right+flag+size_p)%size_p;j=(j+flag+size_p)%size_p)
 		{
 			if (P[j].x==left_line&&P[j].y>=left_top.y)
 			{
@@ -1944,7 +1939,7 @@ vector<Mat> segment::get_seperate_masks(const cv::Mat& fgMask,const cv::Mat& mog
 		int index_left_down=0;
 		Point right_down;right_down.y=fgMask.rows;right_down.x=right_line;
 		int index_right_down=0;
-		for (int j=index_right;j!=index_left;j=(j+flag+size_p)%size_p)
+		for (int j=index_right;j!=(index_left+flag+size_p)%size_p;j=(j+flag+size_p)%size_p)
 		{
 			if (P[j].x==left_line&&P[j].y<=left_down.y)
 			{
@@ -1963,12 +1958,12 @@ vector<Mat> segment::get_seperate_masks(const cv::Mat& fgMask,const cv::Mat& mog
 		{
 			contour.push_back(P[j]);
 		}
-		//contour.push_back(right_top);
+		contour.push_back(right_top);
 		for (int j=index_right_down;j!=index_left_down;j=(j+flag+size_p)%size_p)
 		{
 			contour.push_back(P[j]);
 		}
-		//contour.push_back(left_down);
+		contour.push_back(left_down);
 		vector<vector<Point>> c;c.push_back(contour);
 		drawContours(mask,c,-1,255,CV_FILLED);
 		mask=mask&fgMask;
