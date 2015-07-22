@@ -119,12 +119,13 @@ plyr.SeekToFrame("MyDepth", 999, XN_PLAYER_SEEK_SET);
 			vector<Point> seed;
 			Mat mask;
 
-			seed=my_seg.seedHeadTempMatch(depth,false,false,true);
+			seed=my_seg.seedHeadTempMatch(depth,true);
+			waitKey(1);
 			//seed=my_seg.seedSGF(depth,true);
 			//seed=my_seg.seedSGF(depth,true,mask);
 
 
-			//imshow("mask",mask);waitKey(1);
+			//imshow("mask",mask);
 			cout<<"seed number: "<<seed.size()<<endl;
 			//my_seg.find_circles();
 			//my_seg.find_realHead();
@@ -145,7 +146,6 @@ plyr.SeekToFrame("MyDepth", 999, XN_PLAYER_SEEK_SET);
 // 		{
 // 			/*waitKey(0);*/
 // 		}
-		waitKey(10);
 // 		Mat res1=my_seg.get_result1();
 // 		Mat res2=my_seg.get_result2();
 // 		Mat res3=my_seg.get_result3();

@@ -101,7 +101,7 @@ void segment::smooth_image()
 
 //	imwrite("depth_"+name+".jpeg",gray_map);
 // 	cv::imshow("depth map after pre-process",gray_map);
-// 	cv::waitKey(1);
+// 	cv::
 }
 void segment::compute_edge(double threshold1,double threshold2)
 {
@@ -124,7 +124,7 @@ void segment::compute_filter_map_edge(double threshold1,double threshold2)
 	Canny(filter_map, filter_edge, threshold1, threshold2);
 	threshold(filter_edge,filter_edge,128,255,cv::THRESH_BINARY);
 // 	imshow("filter map edge",filter_edge);
-// 	waitKey(1);
+// 	
 }
 void segment::compute_subsamples()
 {
@@ -203,8 +203,9 @@ Mat segment::get_result()
 {
 	return interest_point2.clone();
 }
-vector<Point> segment::seedHeadTempMatch(cv::Mat dmat,bool showResult/* =false */,bool showTime/*=false*/,bool showDemo/*=false*/) //利用模板匹配
+vector<Point> segment::seedHeadTempMatch(cv::Mat dmat,bool showResult/* =false */) //利用模板匹配
 {
+	int begin=clock();
 	depth_map=dmat.clone();
 	depth_map.convertTo(depth_map,CV_32FC1);
 	double dmax,dmin;
@@ -213,7 +214,6 @@ vector<Point> segment::seedHeadTempMatch(cv::Mat dmat,bool showResult/* =false *
 	depth_map.convertTo(gray_clone,CV_8UC1,255.0/8000,0);
 	gray_map=gray_clone.clone();
 	//set_depthMap(dmat);
-	int begin=clock();
 	//seperate_foot_and_ground();
 	compute_edge(threshold_depth_min,threshold_depth_max);
 	threshold(edge_map_thresh,edge_map_thresh,128,255,THRESH_BINARY_INV);
@@ -230,13 +230,18 @@ vector<Point> segment::seedHeadTempMatch(cv::Mat dmat,bool showResult/* =false *
 	find_and_draw_countours();
 	choose_and_draw_interest_region();
 
+	if (showResult)
+	{
+		cout<<"time cost: "<<clock()-begin<<endl;
+		display();
+	}
 //	if (!showDemo)
 //	{
 		return headpoints_location;
 //	}
-/*
-	//下边是自己的区域增长和分割
 
+	//下边是自己的区域增长和分割
+/*
 	region_grow_map=Mat::zeros(distance_map.rows,distance_map.cols,CV_8U);
 	mask_of_distance=Mat::zeros(distance_map.rows,distance_map.cols,CV_8U);
 	for (int i=0;i<headpoints_location.size();++i)
@@ -251,7 +256,7 @@ vector<Point> segment::seedHeadTempMatch(cv::Mat dmat,bool showResult/* =false *
 	dilate( region_grow_map,region_grow_map,element1);
 	if (showResult)
 	{
-		imshow("region grow",region_grow_map);waitKey(1);
+		imshow("region grow",region_grow_map);
 // 		imwrite("region_grow_"+name+".jpg",region_grow_map);
 // 		cout<<name<<endl;
 	}
@@ -271,7 +276,7 @@ vector<Point> segment::seedHeadTempMatch(cv::Mat dmat,bool showResult/* =false *
 #endif //CV_VERSION_EPOCH
 	if (showResult)
 	{
-		imshow("foeground mask",fg_depth);waitKey(1);
+		imshow("foeground mask",fg_depth);
 	}
 
 	//根据区域内动点个数进行分割长在一起的人
@@ -313,13 +318,13 @@ vector<Point> segment::seed_method2(cv::Mat dmat,bool showResult/* =false */,boo
 	if (showResult)
 	{
 		imshow("result",gray_clone);
-		waitKey(1);
+		
 		imshow("depth without bg mask",depth_mask);
-		waitKey(1);
+		
 		imshow("top down view",depth_sjbh);
-		waitKey(1);
+		
 		imshow("top down view binary",sjbh_binary);
-		waitKey(1);
+		
 	}
 		return get_seed();
 }
@@ -351,7 +356,7 @@ vector<Point> segment::seedSGF(Mat dmat,bool showResult,bool seed_raw,Mat& depth
 
 		sjbh();
 // 		imshow("depth mask",depth_mask);
-// 		waitKey(1);
+// 		
 		compute_cost();
 		if (_SGF_DEBUG)
 		{
@@ -360,13 +365,13 @@ vector<Point> segment::seedSGF(Mat dmat,bool showResult,bool seed_raw,Mat& depth
 		if (_SGF_SHOW)
 		{
 			imshow("result",gray_clone);
-			waitKey(1);
+			
 			imshow("depth without bg mask",depth_mask);
-			waitKey(1);
+			
 			imshow("top down view",depth_sjbh);
-			waitKey(1);
+			
 			imshow("top down view binary",sjbh_binary);
-			waitKey(1);
+			
 		}
 		return get_seed();
 	}
@@ -411,7 +416,7 @@ vector<Point> segment::seedSGF(Mat dmat,bool showResult,bool seed_raw,Mat& depth
 // 
 // 	//imwrite("depth_"+name+".jpeg",gray_map);
 // 
-// 	waitKey(1);
+// 	
 
 
 //	smooth_image();
@@ -420,16 +425,16 @@ vector<Point> segment::seedSGF(Mat dmat,bool showResult,bool seed_raw,Mat& depth
 //	seperate_foot_and_ground();
 // 	compute_filter_map_edge(threshold_filter_min,threshold_filter_max);
 // // 	imshow("seperate foot and ground",filter_map);
-// // 	waitKey(1);
+// // 	
 // 
 	else
 	{
  	compute_edge(threshold_depth_min,threshold_depth_max);
 // // 	imshow("depth edge",edge_map_thresh);
-// // 	waitKey(1);
+// // 	
 // 	edge_map_thresh=edge_map_thresh+filter_edge;
 // 	imshow("edge",edge_map_thresh);
-// 	waitKey(1);
+// 	
 	threshold(edge_map_thresh,edge_map_thresh,128,255,THRESH_BINARY_INV);
 
 //	edge_map_thresh=zc::getHumanEdge(depth_map);
@@ -443,7 +448,7 @@ vector<Point> segment::seedSGF(Mat dmat,bool showResult,bool seed_raw,Mat& depth
 // 
 // 
 // 
-// 	waitKey(1);
+// 	
 // 
 // 	//直方图变换
 // 	Mat lut=Mat::zeros(1,256,CV_8U);
@@ -454,13 +459,13 @@ vector<Point> segment::seedSGF(Mat dmat,bool showResult,bool seed_raw,Mat& depth
 // 	Mat distance_map_lut;
 // 	LUT(distance_map_uchar,lut,distance_map_lut);
 // 	imshow("distance 2",distance_map_lut);
-// 	waitKey(1);
+// 	
  
 	t1=clock();
  	equalizeHist(distance_map_uchar,distance_map_uchar);
 //	cout<<"hist equalize time:"<<clock()-t1<<endl;
 // 	imshow("distance 3",distance_map_uchar);
-// 	waitKey(1);
+// 	
 // 
 // 
 	t1=clock();
@@ -492,7 +497,7 @@ vector<Point> segment::seedSGF(Mat dmat,bool showResult,bool seed_raw,Mat& depth
 		seed_queue.empty();
 		region_grow(region_of_interest[i].y,region_of_interest[i].x,1);
 	}
-	imshow("region grow",region_grow_map);waitKey(1);
+	imshow("region grow",region_grow_map);
 //	cout<<"choose seed time:"<<clock()-t1<<endl;
 	if (_SGF_DEBUG)
 	{
@@ -744,7 +749,7 @@ void segment::seperate_foot_and_ground()
 	}
 	/*imshow("filter map1",filter_map);*/
 
-	waitKey(1);
+	
 
 // 	for ( int i = 1; i < 4; i = i + 2 )
 // 	{
@@ -754,7 +759,7 @@ void segment::seperate_foot_and_ground()
 	Mat tmp;
 	Canny(filter_map,tmp,threshold_filter_min,threshold_filter_max);
 // 	imshow("raw canny from filter map",tmp);
-// 	waitKey(1);
+// 	
 
 	threshold(filter_map,filter_map,threshold_binary_filter,255,THRESH_BINARY);
 	
@@ -769,7 +774,7 @@ void segment::seperate_foot_and_ground()
 	erode( filter_map, filter_map,element);
 	dilate( filter_map, filter_map,element1);
  	/*imshow("filter map binary",filter_map);*/
- 	waitKey(1);
+ 	
 }
 void segment::compute_hist()
 {
@@ -781,7 +786,7 @@ void segment::compute_hist()
 	bool uniform=true,accumulate=false;
 // 	threshold(filter_map,filter_map,128,255,THRESH_BINARY_INV);
 // 	imshow("filter",filter_map);
-// 	waitKey(1);
+// 	
 	calcHist( &depth_map, 1, 0, Mat(), histogram_image, 1, &histSize, &histRange, uniform, accumulate );
 
 /*	cout<<histogram_image<<endl;*/
@@ -825,7 +830,7 @@ void segment::compute_hist()
 //	cout<<"depth threshold: "<<sep<<endl;
 	depth_mask=Mat::zeros(depth_map.rows,depth_map.cols,CV_8U);
 // 	imshow("11111",depth_mask);
-// 	waitKey(1);
+// 	
 	for (int i=0;i<depth_map.rows;++i)
 	{
 		for (int j=0;j<depth_map.cols;++j)
@@ -850,7 +855,6 @@ void segment::compute_hist()
 // 			255, 2, 8, 0  );
 // 	}
 // 	imshow("histogram", histImage );
-// 	waitKey(0);
 }
 bool segment::compute_trueHead(const Point2i& p)
 {
@@ -996,40 +1000,40 @@ void segment::display()
 // 	if (show_result)
 // 	{	
 // 		imshow("result",interest_point);
-// 		waitKey(1);
+// 		
 // 		imshow("result of raw headpoints",interest_point_raw);
-// 		waitKey(1);
+// 		
 // 		imshow("result with thresh ckb",interest_point1);
-// 		waitKey(1);
+// 		
 		imshow("result",interest_point2);
-		waitKey(1);
-		imwrite("headPoints_"+name+".jpg",interest_point2);
+		
+		/*imwrite("headPoints_"+name+".jpg",interest_point2);*/
 // 		imshow("result with all methods",interest_point4);
-// 		waitKey(1);
+// 		
 // 		imshow("result with thresh ckb and headsize",interest_point3);
-// 		waitKey(1);
+// 		
 //	}
 // 	if (do_region_grow)
 // 	{
 // 		imshow("region grow",region_grow_map);
-// 		waitKey(1);
+// 		
 // 	}
 // 	if (show_edge)
 // 	{
 // 		imshow("edges from Canny",edge_map_thresh);
-// 		waitKey(1);
+// 		
 // 	}
 // 	if (show_distance_map)
 // 	{
 // 		imshow("distance map",sub_distance_maps[0]);
-// 		waitKey(1);
+// 		
 // 	}
 // 	if (show_responses)
 // 	{
 // 		for (int i=0;i<sub_responses.size();++i)
 // 		{
 // 			imshow("response"+string('0'+i,1),sub_responses[i]);
-// 			waitKey(1);
+// 			
 // 		}
 // 	}
 // 	if (show_histogram)
@@ -1046,7 +1050,7 @@ void segment::display()
 // 				255, 2, 8, 0  );
 // 		}
 // 		imshow("histogram", histImage );
-// 		waitKey(1);
+// 		
 // 	}
 }
 void segment::sjbh()
@@ -1075,7 +1079,7 @@ void segment::sjbh()
 	}
 	depth_sjbh.convertTo(depth_sjbh,CV_8U);
 // 	imshow("shi jiao bian huan no operation",depth_sjbh);
-// 	waitKey(1);
+// 	
 	//threshold(depth_sjbh,depth_sjbh,50,255,CV_8U);
 
 	Mat tmp;
@@ -1094,11 +1098,11 @@ void segment::sjbh()
 	//depth_sjbh=depth_sjbh.t();
 // 	imshow("shi jiao bian huan",tmp);
 // 	imwrite("topdown-view_"+name+".jpeg",tmp);
-// 	waitKey(1);
+// 	
 	
 	threshold(tmp,sjbh_binary,180,255,THRESH_BINARY);
 // 	imshow("sjbh binary",sjbh_binary);
-// 	waitKey(1);
+// 	
 // 	imwrite("topdown-binary_"+name+".jpeg",sjbh_binary);
 
 	vector<vector<Point> > contours;
@@ -1135,7 +1139,7 @@ void segment::sjbh()
 		}
 	}
 // 	imshow("depth with seed",gray_clone);
-// 	waitKey(1);
+// 	
 // 	imwrite("seed_"+name+".jpeg",gray_clone);
 }
 void segment::set_background(const Mat& bg)
@@ -1177,7 +1181,7 @@ void segment::show_difference()
 		}
 	}
 	imshow("background substract",difference_map);
-	waitKey(1);
+	
 }
 void segment::find_bg()
 {
@@ -1207,7 +1211,7 @@ void segment::find_bg()
 		}
 	}
 	imshow("bg plane",res);
-	waitKey(1);
+	
 }
 void segment::compute_height()
 {
@@ -1265,7 +1269,7 @@ void segment::compute_height()
 	erode( depth_mask, depth_mask,element);
 	dilate( depth_mask, depth_mask,element1);
 // 	imshow("depth after cut",depth_map);
-// 	waitKey(1);
+// 	
 }
 
 void segment::compute_cost()
@@ -1353,7 +1357,7 @@ vector<Point2i> segment::get_seed()
 }
 void segment::useMOG()
 {
-	imshow("raw image",depth_map);waitKey(1);
+	imshow("raw image",depth_map);
 	//BackgroundSubtractorMOG2 bgMOG(10, 2, false );
 	Mat fg_depth;
 #ifdef CV_VERSION_EPOCH
@@ -1368,10 +1372,10 @@ void segment::useMOG()
 	//bgMOG.getBackgroundImage(bg_depth);
 	//bg_depth.convertTo(bg_depth,CV_8U);
 	//fg_depth.convertTo(fg_depth,CV_8U);
-	imshow("foreground of MOG",fg_depth);waitKey(1);
+	imshow("foreground of MOG",fg_depth);
 }
 
-vector<Point> segment::get_seperate_points(const Mat& fgMask,bool showResult,bool Delay)
+vector<Point> segment::get_seperate_points(const Mat& fgMask,bool showResult)
 {
 	Mat tmp=fgMask.clone();
 	vector<vector<Point> > contours;
@@ -1486,15 +1490,11 @@ vector<Point> segment::get_seperate_points(const Mat& fgMask,bool showResult,boo
 			circle(tmp,local_minimum[i],5,128,5);
 		}
 		imshow("minimum points",tmp);
-		if (Delay)
-			waitKey(0);
-		else
-			waitKey(1);
 	}
 	return local_minimum;
 }
 
-vector<Mat> segment::get_seperate_masks(const Mat& fgMask,bool showResult,bool Delay)
+vector<Mat> segment::get_seperate_masks(const Mat& fgMask,bool showResult)
 {
 	//为避免出错（奇怪的错误），对tmp进行膨胀,避免出现一个像素宽度的轮廓
 	Mat tmp=fgMask.clone();
@@ -1615,7 +1615,7 @@ vector<Mat> segment::get_seperate_masks(const Mat& fgMask,bool showResult,bool D
 		{
 			circle(tmp,local_minimum[i],5,128,5);
 		}
-		imshow("minimum points",tmp);waitKey(1);
+		imshow("minimum points",tmp);
 	}
 	vector<Mat> Masks;
 	if (local_minimum.size()==0)
@@ -1624,10 +1624,6 @@ vector<Mat> segment::get_seperate_masks(const Mat& fgMask,bool showResult,bool D
 		{
 			imshow("demo show seperate region",fgMask);
 			/*imwrite("seperate_mask_"+name+".jpg",M);*/
-			if (Delay)
-				waitKey(0);
-			else
-				waitKey(1);
 		}
 		Masks.push_back(fgMask.clone());
 		return Masks;
@@ -1679,7 +1675,7 @@ vector<Mat> segment::get_seperate_masks(const Mat& fgMask,bool showResult,bool D
 		/*drawContours(demo_show,c,-1,color_1*color_2,CV_FILLED);++color_2;*/
 // 		if (showResult)
 // 		{
-// 			imshow("seperated mask left",mask);waitKey(1);
+// 			imshow("seperated mask left",mask);
 // 		}
 		Masks.push_back(mask.clone());
 		}
@@ -1732,7 +1728,7 @@ vector<Mat> segment::get_seperate_masks(const Mat& fgMask,bool showResult,bool D
 			/*drawContours(demo_show,c,-1,color_1*color_2,CV_FILLED);++color_2;*/
 // 			if (showResult)
 // 			{
-// 				imshow("seperated mask "+string('0'+i,1),mask);waitKey(1);
+// 				imshow("seperated mask "+string('0'+i,1),mask);
 // 			}
 			Masks.push_back(mask.clone());
 			}
@@ -1773,7 +1769,7 @@ vector<Mat> segment::get_seperate_masks(const Mat& fgMask,bool showResult,bool D
 		/*drawContours(demo_show,c,-1,color_1*color_2,CV_FILLED);++color_2;*/
 // 		if (showResult)
 // 		{
-// 			imshow("seperated mask right",mask);waitKey(1);
+// 			imshow("seperated mask right",mask);
 // 		}
 		Masks.push_back(mask.clone());
 		}
@@ -1782,14 +1778,11 @@ vector<Mat> segment::get_seperate_masks(const Mat& fgMask,bool showResult,bool D
 	{
 		imshow("demo show seperate region",demo_show);
 		/*imwrite("seperate_mask_"+name+".jpg",demo_show);*/
-		if (Delay)
-			waitKey(0);
-		else
-			waitKey(1);
+			
 	}
 	return Masks;
 }
-vector<Mat> segment::get_seperate_masks(const cv::Mat& fgMask,const cv::Mat& mogMask,vector<Point> headPoints,std::vector<double> headSize,bool showResult/* =false */,bool drawHist/* =false */,bool Delay/* =false */)
+vector<Mat> segment::get_seperate_masks(const cv::Mat& fgMask,const cv::Mat& mogMask,vector<Point> headPoints,std::vector<double> headSize,bool showResult/* =false */,bool drawHist/* =false */)
 {
 	//首先统计fgMask中每条竖线上的前景点个数
 	Mat mog_in_fg=fgMask&mogMask;
@@ -1810,7 +1803,7 @@ vector<Mat> segment::get_seperate_masks(const cv::Mat& fgMask,const cv::Mat& mog
 	//画出上述统计点的直方图
 	if (drawHist)
 	{
-		imshow("motion points",mog_in_fg);waitKey(1);
+		imshow("motion points",mog_in_fg);
 		/*imwrite("motionPoints_"+name+".jpg",mog_in_fg);*/
 		Mat hist=Mat::zeros(mog_in_fg.rows,mog_in_fg.cols,CV_8U);
 		for (int i=0;i<points.size();++i)
@@ -1819,7 +1812,7 @@ vector<Mat> segment::get_seperate_masks(const cv::Mat& fgMask,const cv::Mat& mog
 			Point p2;p2.x=i;p2.y=mog_in_fg.rows-points[i];
 			line(hist,p1,p2,255);
 		}
-		imshow("histogram of motion points in fgMask",hist);waitKey(1);
+		imshow("histogram of motion points in fgMask",hist);
 		/*imwrite("mog_histogram_"+name+".jpg",hist);*/
 	}
 	/*
@@ -1983,7 +1976,7 @@ vector<Mat> segment::get_seperate_masks(const cv::Mat& fgMask,const cv::Mat& mog
 	}
 	if (showResult)
 	{
-		imshow("seperate mask",mask);waitKey(1);
+		imshow("seperate mask",mask);
 	}
 	/*imwrite("seperate_mask_"+name+".jpg",mask);*/
 	return res;
@@ -2028,7 +2021,7 @@ vector<Mat> segment::findfgMasksMovingHead(const cv::Mat& mog_fg,std::vector<cv:
 	}
 	if (drawResult)
 	{
-		imshow("masks of mog",res_show);waitKey(1);
+		imshow("masks of mog",res_show);
 	}
 	return res;
 }

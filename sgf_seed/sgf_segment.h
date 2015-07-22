@@ -37,17 +37,17 @@ namespace sgf
 		void set_name(std::string);
 		void output(string);
 		std::vector<cv::Point> seedSGF(cv::Mat dmat,bool showResult=false,bool raw_seed=false,cv::Mat& depth_without_bg=cv::Mat());
-		std::vector<cv::Point> seedHeadTempMatch(cv::Mat dmat,bool showResult=false,bool showTime=false,bool showDemo=false);
+		std::vector<cv::Point> seedHeadTempMatch(cv::Mat dmat,bool showResult=false);
 		std::vector<cv::Point> seed_method2(cv::Mat dmat,bool showResult=false,bool showTime=false);
 		bool read_config(const std::string &configPath);
 		int accurate;
 		std::string videoname;
 
 		//根据找到区域的轮廓进行进一步分割，用来对坐姿下的被增长在一起的人进行分割
-		std::vector<cv::Point> get_seperate_points(const cv::Mat& fgMask,bool showResult=false,bool Delay=false);
-		std::vector<cv::Mat> get_seperate_masks(const cv::Mat& fgMask,bool showresult=false,bool Delay=false);
+		std::vector<cv::Point> get_seperate_points(const cv::Mat& fgMask,bool showResult=false);
+		std::vector<cv::Mat> get_seperate_masks(const cv::Mat& fgMask,bool showresult=false);
 		//根据区域内MOG的结果，统计前景点（动点）个数，通过直方图峰值和种子点位置联合分割
-		std::vector<cv::Mat> get_seperate_masks(const cv::Mat& fgMask,const cv::Mat& mogMask,std::vector<cv::Point> headPoints=std::vector<cv::Point>(),std::vector<double> headSize=std::vector<double>(),bool showResult=false,bool drawHist=false,bool Delay=false);
+		std::vector<cv::Mat> get_seperate_masks(const cv::Mat& fgMask,const cv::Mat& mogMask,std::vector<cv::Point> headPoints=std::vector<cv::Point>(),std::vector<double> headSize=std::vector<double>(),bool showResult=false,bool drawHist=false);
 		std::vector<double> get_headSize();
 		std::vector<cv::Mat> findfgMasksMovingHead(const cv::Mat& mog_fg,std::vector<cv::Point> headPoints=std::vector<cv::Point>(),std::vector<double> headSize=std::vector<double>(),int range=2,int thresh=100,bool drawResult=false);
 	private:
