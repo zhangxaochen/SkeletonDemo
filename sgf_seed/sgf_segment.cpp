@@ -1949,15 +1949,34 @@ vector<Mat> segment::get_seperate_masks(const cv::Mat& fgMask,const cv::Mat& mog
 		contour.push_back(left_down);
 		vector<vector<Point>> c;c.push_back(contour);
 		drawContours(mask,c,-1,255,CV_FILLED);
-		mask=mask&fgMask;
+		//mask=mask&fgMask;
 		res.push_back(mask);
+	}
+// 	if (showResult)
+// 	{
+// 		imshow("seperate mask",mask);
+// 	}
+	//对重叠的mask进行求并计算，将重叠的mask变成一个
+	vector<vector<Point>> tmp_contours;
+	findContours(mask,tmp_contours,CV_RETR_LIST , CV_CHAIN_APPROX_NONE);
+	res.clear();
+	Mat res_show=Mat::zeros(fgMask.rows,fgMask.cols,CV_8U);
+	for (int i=0;i<tmp_contours.size();++i)
+	{
+		vector<vector<Point>> c;
+		c.push_back(tmp_contours[i]);
+		Mat tmp_res=Mat::zeros(fgMask.rows,fgMask.cols,CV_8U);
+		drawContours(tmp_res,c,-1,255,CV_FILLED);
+		drawContours(res_show,c,-1,255,CV_FILLED);
+		res.push_back(tmp_res);
 	}
 	if (showResult)
 	{
-		imshow("seperate mask",mask);
+		imshow("separate masks",res_show);
+		cout<<"mask number: "<<res.size()<<endl;
 	}
-	/*imwrite("seperate_mask_"+name+".jpg",mask);*/
 	return res;
+	/*imwrite("seperate_mask_"+name+".jpg",mask);*/
 }
 vector<Mat> segment::findfgMasksMovingHead(const cv::Mat& mog_fg,std::vector<cv::Point> headPoints/* =std::vector<cv::Point>() */,std::vector<double> headSize/* =std::vector<double>() */,int range/* =5 */,int thresh/* =10 */,bool drawResult/*=false*/)
 {	
