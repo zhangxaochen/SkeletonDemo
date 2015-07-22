@@ -21,6 +21,9 @@ int g_ImgIndex = 0;
 #undef CAPG_SKEL_VERSION_0_1 //改用 v0.9. 2015年7月1日00:07:01
 #define CAPG_SKEL_VERSION_0_9 //对应 skeleton_test v0.9. 2015年6月30日23:59:18
 
+#undef CAPG_SKEL_VERSION_0_9
+#define CAPG_SKEL_VERSION_0_9_5	//增加方案二（限制增长mask），方案一增加后处理分割（by孙国飞）两种方法，三者对比测试
+
 //按空格，则手动播放：
 bool isManually = false;
 bool isExit = false;
@@ -589,7 +592,7 @@ void main(int argc, char **argv){
 		//必须：初始化prevDmat
 		zc::initPrevDmat(dmat);
 		static vector<Mat> prevMaskVec;
-		static vector<HumanFg> humVec;
+		static vector<HumanObj> humVec;
 
 		clock_t begt = clock();
 		//A.去除背景 & 地面：
@@ -733,11 +736,22 @@ void main(int argc, char **argv){
 		//必须： 更新 prevDmat
 		zc::setPrevDmat(dmat);
 
-#endif // CAPG_SKEL_VERSION_0_9
+#elif defined CAPG_SKEL_VERSION_0_9_5
+		//---------------孙国飞头部种子点，初始化配置：
+		const char *sgfConfigFn = "d:/Users/zhangxaochen/Desktop/SenseKitSDK-0.1.4-20150424T043853Z-win32/samples/plugins/orbbec_skeleton/sgf_seed/config.txt";
+		const char *sgfTempl = "D:/Users/zhangxaochen/Desktop/SenseKitSDK-0.1.4-20150424T043853Z-win32/samples/plugins/orbbec_skeleton/sgf_seed/headtemplate.bmp";
+		// 	segment my_seg;
+		// 	my_seg.read_config(sgfConfigFn);
+		// 	my_seg.set_headTemplate2D(sgfTempl);
+		zc::loadSeedHeadConf(sgfConfigFn, sgfTempl);
 
-// 		if(fid>113)
-// 			key = waitKey(0);
-		//key = waitKey(01);
+		clock_t begt = clock();
+
+		vector<Mat> fgMskVec = zc::getFgMaskVec(dmat, fid, ZC_DEBUG_LV1);
+
+		cout << "getFgMaskVec.ts: " << clock() - begt << endl;
+#endif //CAPG_SKEL_VERSION_0_9, 0_9_5
+
 		key = waitKey(isManually ? 0 : 1);
 		switch (key)
 		{
@@ -749,8 +763,10 @@ void main(int argc, char **argv){
 			break;
 		case 'r': //reset
 			plyr.SeekToFrame("Depth1", frameOffset, XN_PLAYER_SEEK_SET);
+#ifdef CAPG_SKEL_VERSION_0_9
 			prevMaskVec.clear();
 			humVec.clear();
+#endif //CAPG_SKEL_VERSION_0_9
 			break;
 
 		case 'b':

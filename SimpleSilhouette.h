@@ -26,7 +26,7 @@ const int QVGA_WIDTH = 320,
 #define MIN_VALID_HEIGHT_PHYSICAL_SCALE 600
 #define MIN_VALID_HW_RATIO 1.5 //height-width ratio
 
-static cv::RNG rng;
+//static cv::RNG rng;
 
 extern const int thickLimitDefault;// = 1500;
 extern int thickLimit;// = thickLimitDefault; //毫米
@@ -430,8 +430,11 @@ namespace zc{
 	//单例模式，返回单例指针
 	sgf::segment* loadSeedHeadConf(const char *confFn = "./sgf_seed/config.txt", const char *templFn = "./sgf_seed/headtemplate.bmp");
 
-	//孙国飞实现的头部种子点方法
-	vector<Point> seedHead(const Mat &dmat, bool debugDraw = false);
+	//孙国飞实现的头部种子点方法，的包装方法
+	vector<Point> seedHeadTempMatch(const Mat &dmat, bool debugDraw = false);
+
+	//孙国飞获取头部大小的包装方法
+	vector<double> getHeadSizes();
 
 #pragma endregion //孙国飞头部种子点
 
@@ -440,8 +443,66 @@ namespace zc{
 #pragma endregion //从 opencv300 拷贝 boundingRect 
 
 }//namespace zc
-
 using zc::HumanObj;
+
+//从 opencv300 拷贝 Point_.operator/, 兼容 opencv2.x
+namespace zc{
+#ifdef CV_VERSION_EPOCH //if opencv2.x
+	//@types.hpp L1165
+	template<typename _Tp> static inline
+		Point_<_Tp>& operator /= (Point_<_Tp>& a, int b)
+	{
+		a.x = saturate_cast<_Tp>(a.x / b);
+		a.y = saturate_cast<_Tp>(a.y / b);
+		return a;
+	}
+
+	template<typename _Tp> static inline
+		Point_<_Tp>& operator /= (Point_<_Tp>& a, float b)
+	{
+		a.x = saturate_cast<_Tp>(a.x / b);
+		a.y = saturate_cast<_Tp>(a.y / b);
+		return a;
+	}
+
+	template<typename _Tp> static inline
+		Point_<_Tp>& operator /= (Point_<_Tp>& a, double b)
+	{
+		a.x = saturate_cast<_Tp>(a.x / b);
+		a.y = saturate_cast<_Tp>(a.y / b);
+		return a;
+	}
+
+	//@types.hpp L1275
+	template<typename _Tp> static inline
+		Point_<_Tp> operator / (const Point_<_Tp>& a, int b)
+	{
+		Point_<_Tp> tmp(a);
+		tmp /= b;
+		return tmp;
+	}
+
+	template<typename _Tp> static inline
+		Point_<_Tp> operator / (const Point_<_Tp>& a, float b)
+	{
+		Point_<_Tp> tmp(a);
+		tmp /= b;
+		return tmp;
+	}
+
+	template<typename _Tp> static inline
+		Point_<_Tp> operator / (const Point_<_Tp>& a, double b)
+	{
+		Point_<_Tp> tmp(a);
+		tmp /= b;
+		return tmp;
+	}
+#elif CV_VERSION_MAJOR >= 3 //if opencv3
+	//do-nothing
+#endif //CV_VERSION_EPOCH
+}//namespace zc-从 opencv300 拷贝 Point_.operator/, 兼容 opencv2.x
+
+
 
 //---------------测试代码放这里
 namespace zc{
@@ -515,6 +576,10 @@ namespace zc{
 	//@brief 利用maxDmat，稳定背景做diff，扣除鬼影；利用maxDmat-MOG，扣除伪鬼影
 	Mat  getMaxDepthBgMask(Mat dmat, bool debugDraw = false);
 
+	vector<Mat> separateMasksMovingHead(Mat dmat, vector<Mat> &inMaskVec, Mat &mogMask, bool debugDraw = false);
+
+	//@brief 孙国飞V形分割方案的包装方法，接口改为 inMaskVec，非单一mask
+	vector<Mat> separateMasksContValley(Mat dmat, vector<Mat> &inMaskVec, bool debugDraw = false);
 }//zc
 
 using zc::MyBGSubtractor;
