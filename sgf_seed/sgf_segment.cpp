@@ -1563,6 +1563,10 @@ vector<Mat> segment::get_seperate_masks(const Mat& fgMask,bool showResult)
 	for (int i=index_left;i!=index_right;i=(i+flag+size_p)%size_p)
 	{
 		Point p=P[i];
+		if (p==p_left||p==p_right)
+		{
+			continue;
+		}
 		bool is_min=true;
 		bool is_max=true;
 		int min_y=tmp.rows;
@@ -1636,24 +1640,17 @@ vector<Mat> segment::get_seperate_masks(const Mat& fgMask,bool showResult)
 		Point p_mid1,p_mid2;
 		int index_mid1,index_mid2;
 		p_mid1=P[local_min_index[0]];index_mid1=local_min_index[0];
-		int _c=0;
 
-		for (int j=local_min_index[0];;j=(j-flag+size_p)%size_p)
+		contour.push_back(P[local_min_index[0]]);
+		for (int j=(local_min_index[0]-flag+size_p)%size_p;;j=(j-flag+size_p)%size_p)
 		{
 			Point p=P[j];
 			contour.push_back(p);
-			if (p.x==P[local_min_index[0]].x&&p.y>P[local_min_index[0]].y)
+			if (p.x==P[local_min_index[0]].x&&p.y>=P[local_min_index[0]].y)
 			{
 				p_mid2=p;index_mid2=j;
 				break;
 			}
-			++_c;
-			if (_c>size_p)
-			{
-				p_mid2=p;index_mid2=j;
-				break;
-			}
-			
 		}
 		double area=0;
 		//保证contour的点的个数为0时不会出错
@@ -1676,13 +1673,13 @@ vector<Mat> segment::get_seperate_masks(const Mat& fgMask,bool showResult)
 		}
 
 		//中间部分分开
-		for (int i=0;i<local_minimum.size()-1;++i)
+		for (int i=1;i<local_minimum.size();++i)
 		{
 			mask=Mat::zeros(tmp.rows,tmp.cols,CV_8U);
 			c.clear();
 			contour.clear();
 
-			for (int j=local_min_index[i+1];j!=index_mid1;j=(j-flag+size_p)%size_p)
+			for (int j=local_min_index[i];j!=index_mid1;j=(j-flag+size_p)%size_p)
 			{
 				Point p=P[j];
 				contour.push_back(p);
@@ -1690,20 +1687,13 @@ vector<Mat> segment::get_seperate_masks(const Mat& fgMask,bool showResult)
 			contour.push_back(p_mid1);
 			contour.push_back(p_mid2);
 
-			p_mid1=P[local_min_index[i+1]];index_mid1=local_min_index[i+1];
+			p_mid1=P[local_min_index[i]];index_mid1=local_min_index[i];
 
-			_c=0;
 			for (int j=index_mid2;;j=(j-flag+size_p)%size_p)
 			{
 				Point p=P[j];
 				contour.push_back(p);
-				if (p.x==P[local_min_index[i+1]].x&&p.y>P[local_min_index[i+1]].y)
-				{
-					p_mid2=p;index_mid2=j;
-					break;
-				}
-				++_c;
-				if (_c>size_p)
+				if (p.x==P[local_min_index[i]].x&&p.y>=P[local_min_index[i]].y)
 				{
 					p_mid2=p;index_mid2=j;
 					break;
@@ -1733,22 +1723,11 @@ vector<Mat> segment::get_seperate_masks(const Mat& fgMask,bool showResult)
 		mask=Mat::zeros(tmp.rows,tmp.cols,CV_8U);
 		c.clear();
 		contour.clear();
-		_c=0;
-		for (int j=index_mid1;j!=index_mid2;j=(j+flag+size_p)%size_p)
+		contour.push_back(P[index_mid1]);
+		for (int j=(index_mid1+flag+size_p)%size_p;j!=index_mid2;j=(j+flag+size_p)%size_p)
 		{
 			Point p=P[j];
 			contour.push_back(p);
-			if (p.x==P[local_min_index[0]].x&&p.y>P[local_min_index[0]].y)
-			{
-				contour.push_back(P[index_mid2]);
-				break;
-			}
-			++_c;
-			if (_c>size_p)
-			{
-				p_mid2=p;index_mid2=j;
-				break;
-			}
 		}
 		area=0;
 		if (contour.size()!=0)
