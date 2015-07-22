@@ -1728,6 +1728,10 @@ vector<Mat> segment::get_seperate_masks(const Mat& fgMask,bool showResult)
 		{
 			Point p=P[j];
 			contour.push_back(p);
+			if (p.x==P[index_mid1].x&&p.y>=P[index_mid1].y)
+			{
+				break;
+			}
 		}
 		area=0;
 		if (contour.size()!=0)
