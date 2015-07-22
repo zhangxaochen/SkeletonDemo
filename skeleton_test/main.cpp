@@ -150,7 +150,7 @@ void main(int argc, char **argv){
 // 	
 	//oniFname = "E:/oni_data/oni132x64/sgf-zc-sit-front-desk.oni";
 // 	oniFname = "E:/oni_data/oni132x64/sgf-zc-sit-low-front-desk-wall.oni";
-	oniFname = "E:/oni_data/oni132x64/sgf-zc-sit-no-front-desk-wall.oni";
+	oniFname = "E:/oni_data/oni132x64/sgf-zc-sit-no-front-desk-wall.oni";	//两人坐沙发
 // 	oniFname = "E:/oni_data/oni132_orig/zc-indoor_sit.oni";
 //  	oniFname = "E:/oni_data/oni132_orig/zc-indoor_sit2.oni";
 
@@ -166,6 +166,8 @@ void main(int argc, char **argv){
 	// 	oniFname = "E:/oni_data/oni132x64/zc-stand-w-feet.oni";
 	//oniFname = "E:/oni_data/oni132x64/zc-stand-wo-feet-qvga.oni";
 // 	oniFname = "E:/oni_data/oni132_orig/zc_indoor_stand.oni";
+	oniFname = "E:/oni_data/oni132_orig/zc_indoor_touch_panel.oni"; //人手触摸大平面板
+
 
 	xn::Player plyr;
 	rc = ctx.OpenFileRecording(oniFname, plyr);
@@ -751,6 +753,27 @@ void main(int argc, char **argv){
 
 		cout << "getFgMaskVec.ts: " << clock() - begt << endl;
 #endif //CAPG_SKEL_VERSION_0_9, 0_9_5
+
+		static vector<HumanObj> humVec;
+		zc::getHumanObjVec(dmat, fgMskVec, humVec);
+		if (humVec.size())
+			int dummy = 0;
+		Mat humMsk彩色 = zc::getHumansMask(dmat, humVec);
+		if (ZC_DEBUG_LV1){
+			putText(humMsk彩色, "fid: " + to_string((long long) fid), Point(0, 30), 
+				FONT_HERSHEY_PLAIN, 1, Scalar(255, 255, 255));
+
+			putText(humMsk彩色, "humVec.size: " + to_string((long long) humVec.size()), Point(0, 50), 
+				FONT_HERSHEY_PLAIN, 1, Scalar(255, 255, 255));
+
+			//绘制多人骨骼：
+			Mat skCanvas = Mat::ones(dmat.size(), CV_8UC1)*UCHAR_MAX;
+			zc::drawSkeletons(humMsk彩色, humVec, -1);
+			imshow("humMsk-color", humMsk彩色);
+			if (ZC_WRITE)
+				imwrite("humMsk-color_" + std::to_string((long long)fid) + ".jpg", humMsk彩色);
+
+		}
 
 		key = waitKey(isManually ? 0 : 1);
 		switch (key)

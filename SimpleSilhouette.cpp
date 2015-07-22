@@ -5,7 +5,7 @@
 #include <functional>
 
 //2015年7月22日13:33:53， 目前两个方案， 1. 无限制增长+SGF两种后处理； 2. 限制增长mask
-#define SOLUTION_1 01
+#define SOLUTION_1 0
 
 //@deprecated, 已验证： 0√， 1×
 //abs-diff 时选用当前点深度还是平均深度：
@@ -2934,7 +2934,7 @@ namespace zc{
 			findContours(humMask.clone(), contours, RETR_TREE, CHAIN_APPROX_NONE);
 
 			//可能一个mask 有多段cont(e.g., 遮挡情境)，要画成一个色：
-			drawContours(res, contours, -1, c, 1);
+			drawContours(res, contours, -1, c, 2);
 
 			//轮廓 遮挡重叠时看不出来，增加质心：
 // 			size_t contSz = contours.size();
@@ -4135,7 +4135,8 @@ namespace zc{
 		//Mat maxDmat = updateMaxDmat(dmat, debugDraw);
 		maxDmat = getMaxDmat(dmat, debugDraw);
 		//去掉伪前景，即“鬼影”。规则： 即使MOG2检测为运动前景，但因发现深度值等于(diff<10cm)历史最大深度，则扣除
-		Mat maxDepBgMask = abs(maxDmat - dmat) < 10; //10mm
+		//Mat maxDepBgMask = abs(maxDmat - dmat) < 10; //10mm
+		Mat maxDepBgMask = abs(maxDmat - dmat) < maxDmat / 60; //10mm
 		updateMaxDmat(dmat, debugDraw);
 
 		if (debugDraw)
