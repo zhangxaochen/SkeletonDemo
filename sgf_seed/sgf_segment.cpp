@@ -1398,9 +1398,9 @@ vector<Point> segment::get_seperate_points(const Mat& fgMask,bool showResult,boo
 	Point p_left,p_right;
 	Point p_top,p_down;
 	int index_left,index_right;
-	p_left.x=region_grow_map.cols;
+	p_left.x=fgMask.cols;
 	p_right.x=0;
-	p_top.y=region_grow_map.cols;
+	p_top.y=fgMask.cols;
 	p_down.y=0;
 	int size_p=P.size();
 	int num=size_p/20;
@@ -1439,7 +1439,7 @@ vector<Point> segment::get_seperate_points(const Mat& fgMask,bool showResult,boo
 		Point p=P[i];
 		bool is_min=true;
 		bool is_max=true;
-		int min_y=region_grow_map.rows;
+		int min_y=fgMask.rows;
 		for (int j=1;j<=num;++j)
 		{
 			if (p.y>P[(i+j)%size_p].y||p.y>P[(i-j+size_p)%size_p].y)
@@ -1898,7 +1898,7 @@ vector<Mat> segment::get_seperate_masks(const cv::Mat& fgMask,const cv::Mat& mog
 	//循环遍历P，找到最左边和最右边的点
 	Point p_left,p_right;
 	int index_left,index_right;
-	p_left.x=region_grow_map.cols;
+	p_left.x=fgMask.cols;
 	p_right.x=0;
 	int size_p=P.size();
 	int num=size_p/20;
