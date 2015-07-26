@@ -34,7 +34,6 @@ extern int thickLimit;// = thickLimitDefault; //毫米
 //一些调试颜色：
 extern Scalar cwhite, cred, cgreen, cblue, cyellow;
 
-
 namespace zc{
 	class HumanObj;
 
@@ -115,7 +114,11 @@ namespace zc{
 	vector<Mat> simpleRegionGrow(const Mat &dmat, vector<vector<Point>> seedsVecOfVec, int thresh, const Mat &mask, bool debugDraw = false);
 
 	//N个种子点mask， 增长为N个mask
-	vector<Mat> simpleRegionGrow(const Mat &dmat, vector<Mat> sdMats, int thresh, const Mat &mask, bool debugDraw = false);
+	vector<Mat> simpleRegionGrow(const Mat &dmat, vector<Mat> &sdMats, int thresh, const Mat &mask, bool debugDraw = false);
+
+	//@brief N个种子点mask， 增长为N个mask。与上面不同，传入maskVec而不是单个mask
+	//@param validMaskVec: 存储每个 sdMat 对应的增长valid-mask
+	vector<Mat> simpleRegionGrow(const Mat &dmat, vector<Mat> &sdMatVec, int thresh, const vector<Mat> &rgMaskVec, bool debugDraw = false);
 	
 	//---------------@deprecated, 错误思路，不该有特定经验性限制！
 // 	vector<Mat> simpleRegionGrow(Mat dmat, Mat seedsMask, int thresh, Mat mask);
@@ -235,6 +238,20 @@ namespace zc{
 	//@param moveMaskMat, 运动前景蒙板，目前用 MOG2
 	vector<Mat> trackingNoMove(Mat dmat, const vector<Mat> &prevFgMaskVec, const vector<Mat> &currFgMskVec, int noMoveThresh = 55, Mat moveMaskMat = Mat(), bool debugDraw = false);
 
+	//@brief 重构trackingNoMove, 得到限制增长mask-vec
+	//对于多人重叠，且同时运动的情形，用 dist-map, 对motion做分割
+	//@param prevFgMaskVec: 上一帧检测到的人体mask-vec
+	//@param moveMask: 运动检测(MOG, etc.)得到的整个前景 mask
+	vector<Mat> getRgMaskVec(const Mat &dmat, const vector<Mat> &prevFgMaskVec, Mat moveMask, bool debugDraw = false);
+
+	//@brief 重构trackingNoMove, 只用方案二, 且将前后getRgMaskVec, merge部分解耦(mergeFgMaskVec)
+	//@param prevFgMaskVec: 前一帧的最终 fgMaskVec
+	//@param rgMaskVec: 每个prevFgMaskVec上每个track到的种子点增长时的限制mask, 预先生成好
+	vector<Mat> trackFgMaskVec(Mat &dmat, const vector<Mat> &prevFgMaskVec, vector<Mat> rgMaskVec, int noMoveThresh = 55, bool debugDraw = false);
+
+	//@brief 从trackingNoMove中抽离。将newVec根据是否重叠, 合并到baseVec上去
+	vector<Mat> mergeFgMaskVec(const vector<Mat> &baseVec, const vector<Mat> &newVec, bool debugDraw = false);
+
 	//若某mask中包含多个孤立连通区域，则将其打散为多个mask
 	//e.g., 两人拉手时tracking成为一个mask，【XY视图】分离时mask也应打散；
 	//人靠近（握持）某物体时，增长为一个mask，分离时，应打散，并根据bbox etc. 判定是否跟踪“某物”
@@ -279,7 +296,11 @@ namespace zc{
 
 	vector<vector<Point>> seedNoMove(Mat dmat, vector<vector<Point>> sdVov, int thresh = 50);
 
-	Mat testMOG2Func(Mat dmat, int history = 100, double varThresh = 1, double learnRate = -1);
+	//@brief 测试 MOG2 运动检测效果， detectShadows=false
+	Mat testBgFgMOG2(const Mat &dmat, int history = 100, double varThresh = 1, double learnRate = -1);
+
+	//@brief 测试 KNN 运动检测效果， detectShadows=false
+	Mat testBgFgKNN(const Mat &dmat, int history = 500, double dist2Threshold = 400.0, double learnRate = -1);
 
 	//@deprecated	---------------2015年7月10日23:17:59 有问题！ 帧循环过程中不应多次调用！设计问题。不应static pMOG2
 	//@brief 用 (MOG2运动检测 | seedNoMove不动点检测)，产生一个有效前景蒙板
@@ -293,6 +314,9 @@ namespace zc{
 	//@brief moveMask 传入运动检测得到的FG; 目前暂用 MOG2结果
 	//实际上应该每个mask单独长成一个new-mask, 此处简化测试, N个长成一个:
 	Mat maskMoveAndNoMove(Mat dmat, Mat moveMask, vector<Mat> prevFgMaskVec, int noMoveThresh = 50, bool debugDraw = false, OutputArray _debug_mat = noArray());
+
+	//这个设计有用？ 没想好。。
+	Mat maskMoveAndStable(Mat moveMask, Mat prevFgMask);
 
 	//@debugging
 	//@brief 返回不同灰度标记前景的mat
@@ -314,6 +338,10 @@ namespace zc{
 
 	//@brief 输入单帧原始深度图， 得到最终 vec-mat-mask. process/run-a-frame
 	vector<Mat> getFgMaskVec(Mat &dmat, int fid, bool debugDraw = false);
+
+	//@brief 调试绘制最终得到的 fgMskVec, humVec
+	//@param debugWrite: if true, 写文件!
+	void debugDrawHumVec(const Mat &dmat, const vector<Mat> &fgMskVec, const vector<HumanObj> &humVec, int fid = -1, bool debugWrite = false);
 
 	class HumanObj
 	{
@@ -444,6 +472,7 @@ namespace zc{
 
 }//namespace zc
 using zc::HumanObj;
+extern vector<HumanObj> humVec;
 
 //从 opencv300 拷贝 Point_.operator/, 兼容 opencv2.x
 namespace zc{
@@ -573,14 +602,20 @@ namespace zc{
 	//@return max-depth-mat
 	Mat updateMaxDmat(Mat &dmat, bool debugDraw = false);
 
+	void resetMaxDmat();
+
 	//@brief 利用maxDmat，稳定背景做diff，扣除鬼影；利用maxDmat-MOG，扣除伪鬼影
-	Mat  getMaxDepthBgMask(Mat dmat, bool debugDraw = false);
+	Mat getMaxDepthBgMask(Mat dmat, bool reInit = true, bool debugDraw = false);
 
 	vector<Mat> separateMasksMovingHead(Mat dmat, vector<Mat> &inMaskVec, Mat &mogMask, bool debugDraw = false);
 
 	//@brief 孙国飞V形分割方案的包装方法，接口改为 inMaskVec，非单一mask
 	vector<Mat> separateMasksContValley(Mat dmat, vector<Mat> &inMaskVec, bool debugDraw = false);
-}//zc
+
+	//@brief 将 maskVec 合并为一个mask
+	//@param maskSize: 若 maskVec 空的， 则以此生成一个全黑mask
+	Mat maskVec2mask(cv::Size maskSize, const vector<Mat> &maskVec);
+}//zc-测试代码放这里
 
 using zc::MyBGSubtractor;
 
