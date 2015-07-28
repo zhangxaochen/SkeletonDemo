@@ -31,6 +31,7 @@ using namespace cv;
 
 segment::segment()
 {
+	
 	_SGF_MODE=1;
 	_SGF_DEBUG=1;
 	_SGF_SHOW=1;
@@ -214,7 +215,7 @@ vector<Point> segment::seedHeadTempMatch(cv::Mat dmat,bool showResult/* =false *
 	depth_map.convertTo(gray_clone,CV_8UC1,255.0/8000,0);
 	gray_map=gray_clone.clone();
 	//set_depthMap(dmat);
-	//seperate_foot_and_ground();
+	seperate_foot_and_ground();
 	compute_edge(threshold_depth_min,threshold_depth_max);
 	threshold(edge_map_thresh,edge_map_thresh,128,255,THRESH_BINARY_INV);
 
@@ -237,9 +238,9 @@ vector<Point> segment::seedHeadTempMatch(cv::Mat dmat,bool showResult/* =false *
 	}
 //	if (!showDemo)
 //	{
-		return headpoints_location;
+		//return headpoints_location;
 //	}
-/*
+
 	//下边是自己的区域增长和分割
 
 	region_grow_map=Mat::zeros(distance_map.rows,distance_map.cols,CV_8U);
@@ -295,7 +296,7 @@ vector<Point> segment::seedHeadTempMatch(cv::Mat dmat,bool showResult/* =false *
 	{
 		display();
 	}
-	return headpoints_location;*/
+	return headpoints_location;
 }
 vector<Point> segment::seed_method2(cv::Mat dmat,bool showResult/* =false */,bool showTime/* =false */)
 {
@@ -2021,4 +2022,525 @@ vector<Mat> segment::findfgMasksMovingHead(const cv::Mat& mog_fg,std::vector<cv:
 		imshow("masks of mog",res_show);
 	}
 	return res;
+}
+
+void segment::buildMaxDepth(const cv::Mat& dmat,const cv::Mat& dmat_old,const cv::Mat& max_dmat_old,cv::Mat&max_dmat_new,const cv::Mat& fgMask_old,cv::Mat& fgMask_new,const cv::Mat& max_dmat_mask_old,cv::Mat& max_dmat_mask_new)
+{
+	/*
+	Mat fgMask=Mat::zeros(dmat.rows,dmat.cols,CV_8U);
+	//change
+	Mat max_dmat_mask_new;
+
+	if (max_dmat.data==NULL)
+	{
+		max_dmat_mask_new=Mat::zeros(dmat.rows,dmat.cols,CV_8U);
+		max_dmat=dmat.clone();
+		fgMask_old=fgMask.clone();
+
+		//change
+		max_dmat_mask=max_dmat_mask_new.clone();
+
+		return fgMask;
+	}
+	//更新max_dmat
+
+	//改成矩阵运算
+
+
+	//change
+	max_dmat_mask_new=max_dmat_mask.clone();
+
+	for (int i=0;i!=max_dmat.rows;++i)
+	{
+		for (int j=0;j!=max_dmat.cols;++j)
+		{
+			int depth_current=dmat.at<ushort>(i,j);
+			int depth_max=max_dmat.at<ushort>(i,j);
+			int depth_old=dmat_old.at<ushort>(i,j);
+			int old_mask_flag=fgMask_old.at<uchar>(i,j);
+
+			//change
+			int mask_depth_max=max_dmat_mask_new.at<uchar>(i,j);
+
+			if (depth_current!=0&&depth_current<int(depth_max*0.97))
+				//if (depth_current!=0&&depth_current<depth_max-100)
+			{
+				//初始状态下总有背景被认为是前景
+				fgMask.at<uchar>(i,j)=255;
+			}
+			if (depth_current!=0&&depth_old==0)
+			{
+				//手滑动时无效区域会出现问题
+				//fgMask.at<uchar>(i,j)=255;
+			}
+			if (depth_current>depth_max&&depth_current-depth_old<50)
+			{
+				fgMask.at<uchar>(i,j)=255;
+
+				//change
+				max_dmat_mask_new.at<uchar>(i,j)=255;
+
+			}
+
+			//change
+			if (abs(depth_current-depth_max)<30&&mask_depth_max!=0)
+			{
+				fgMask.at<uchar>(i,j)=255;
+			}
+
+			if (abs(depth_old-depth_current)<20&&old_mask_flag!=0)
+			{
+				fgMask.at<uchar>(i,j)=255;
+			}
+			max_dmat.at<ushort>(i,j)=max(depth_current,depth_max);
+
+			//change
+			// 			int fgmask_new=fgMask.at<uchar>(i,j);
+			// 			if (fgmask_new==0)
+			// 			{
+			// 				max_dmat_mask_new.at<uchar>(i,j)=0;
+			// 			}
+
+		}
+	}
+	imshow("fgMask raw",fgMask);
+	int erode_size=1;
+	Mat element1 = getStructuringElement( MORPH_RECT,
+		Size( 2*erode_size + 1, 2*erode_size+1 ),
+		Point( erode_size, erode_size ) );
+	//erode( fgMask,fgMask,element1);
+	//fgMask=connectedAreaFilter(fgMask);
+	vector<vector<Point>> c;
+	Mat tmp1=fgMask.clone();
+	findContours(fgMask,c,CV_RETR_CCOMP,CV_CHAIN_APPROX_NONE);
+	Mat tmp=Mat::zeros(fgMask.rows,fgMask.cols,CV_8U);
+	for (int i=0;i<c.size();++i)
+	{
+		double area=contourArea(c[i]);
+		if (area>1000)
+		{
+			vector<vector<Point>> contour;
+			contour.push_back(c[i]);
+			drawContours(tmp,contour,-1,255,CV_FILLED);
+		}
+	}
+	tmp=tmp&tmp1;
+	imshow("fgMask",tmp);
+	fgMask_old=tmp.clone();
+
+	//change
+	max_dmat_mask=max_dmat_mask_new&tmp;
+	imshow("max depth mask",max_dmat_mask);
+
+	return tmp;
+	*/
+
+	Mat fgMask=Mat::zeros(dmat.rows,dmat.cols,CV_8U);
+	//change
+	
+	if (max_dmat_old.data==NULL)
+	{
+		max_dmat_new=dmat.clone();
+		fgMask_new=fgMask.clone();
+		
+		//change
+		max_dmat_mask_new=Mat::zeros(dmat.rows,dmat.cols,CV_8U);
+
+	}
+	//更新max_dmat
+
+	//改成矩阵运算
+	/*fgMask=((dmat!=0)&(dmat<(max_dmat*0.97)))
+		+((dmat>max_dmat)&(dmat<(dmat_old+50)))
+		+((abs(dmat-max_dmat)<30)&(max_dmat_mask!=0))
+		+((abs(dmat-dmat_old)<20)&fgMask_old!=0);
+	max_dmat_mask_new=max_dmat_mask_new+((dmat>max_dmat)&(dmat<(dmat_old+50)));
+	max_dmat=max(max_dmat,dmat);*/
+
+	max_dmat_mask_new=max_dmat_mask_old.clone();
+
+	for (int i=0;i!=max_dmat_old.rows;++i)
+	{
+		for (int j=0;j!=max_dmat_old.cols;++j)
+		{
+			int depth_current=dmat.at<ushort>(i,j);
+			int depth_max=max_dmat_old.at<ushort>(i,j);
+			int depth_old=dmat_old.at<ushort>(i,j);
+			int old_mask_flag=fgMask_old.at<uchar>(i,j);
+
+			//change
+			int mask_depth_max=max_dmat_mask_new.at<uchar>(i,j);
+
+			if (depth_current!=0&&depth_current<int(depth_max*0.97))
+				//if (depth_current!=0&&depth_current<depth_max-100)
+			{
+				//初始状态下总有背景被认为是前景
+				fgMask.at<uchar>(i,j)=255;
+			}
+			if (depth_current!=0&&depth_old==0)
+			{
+				//手滑动时无效区域会出现问题
+				//fgMask.at<uchar>(i,j)=255;
+			}
+			if (depth_current>depth_max&&depth_current-depth_old<50)
+			{
+				fgMask.at<uchar>(i,j)=255;
+
+				//change
+				max_dmat_mask_new.at<uchar>(i,j)=255;
+
+			}
+
+			//change
+			//if (abs(depth_current-depth_max)<depth_max*0.02&&mask_depth_max!=0)
+			if (abs(depth_current-depth_max)<50&&mask_depth_max!=0)
+			{
+				fgMask.at<uchar>(i,j)=255;
+			}
+
+			if (abs(depth_old-depth_current)<20&&old_mask_flag!=0)
+			{
+				fgMask.at<uchar>(i,j)=255;
+			}
+			max_dmat_new.at<ushort>(i,j)=max(depth_current,depth_max);
+
+			//change
+			// 			int fgmask_new=fgMask.at<uchar>(i,j);
+			// 			if (fgmask_new==0)
+			// 			{
+			// 				max_dmat_mask_new.at<uchar>(i,j)=0;
+			// 			}
+
+		}
+	}
+
+
+	//imshow("fgMask raw",fgMask);
+	vector<vector<Point>> c;
+	Mat tmp1=fgMask.clone();
+	findContours(fgMask,c,CV_RETR_CCOMP,CV_CHAIN_APPROX_NONE);
+	Mat tmp=Mat::zeros(fgMask.rows,fgMask.cols,CV_8U);
+	for (int i=0;i<c.size();++i)
+	{
+		double area=contourArea(c[i]);
+		//double area=c[i].size();
+		if (area>2000)
+		{
+			vector<vector<Point>> contour;
+			contour.push_back(c[i]);
+			drawContours(tmp,contour,-1,255,CV_FILLED);
+		}
+	}
+	tmp=tmp&tmp1;
+	//imshow("fgMask",tmp);
+	fgMask_new=tmp.clone();
+
+	//change
+	//max_dmat_mask=max_dmat_mask_new&tmp;
+	for (int i=0;i<tmp.rows;++i)
+	{
+		for (int j=0;j<tmp.cols;++j)
+		{
+			if (tmp.at<uchar>(i,j)==0&&dmat.at<ushort>(i,j)!=0)
+			{
+				max_dmat_mask_new.at<uchar>(i,j)=0;
+			}
+		}
+	}
+	max_dmat_mask_new=max_dmat_mask_new.clone();
+	//imshow("max depth mask",max_dmat_mask_new);
+
+/*
+	//change
+	max_dmat_mask_new=max_dmat_mask.clone();
+
+	for (int i=0;i!=max_dmat.rows;++i)
+	{
+		for (int j=0;j!=max_dmat.cols;++j)
+		{
+			int depth_current=dmat.at<ushort>(i,j);
+			int depth_max=max_dmat.at<ushort>(i,j);
+			int depth_old=dmat_old.at<ushort>(i,j);
+			int old_mask_flag=fgMask_old.at<uchar>(i,j);
+
+			//change
+			int mask_depth_max=max_dmat_mask_new.at<uchar>(i,j);
+
+			if (depth_current!=0&&depth_current<int(depth_max*0.97))
+				//if (depth_current!=0&&depth_current<depth_max-100)
+			{
+				//初始状态下总有背景被认为是前景
+				fgMask.at<uchar>(i,j)=255;
+			}
+			if (depth_current!=0&&depth_old==0)
+			{
+				//手滑动时无效区域会出现问题
+				//fgMask.at<uchar>(i,j)=255;
+			}
+			if (depth_current>depth_max&&depth_current-depth_old<50)
+			{
+				fgMask.at<uchar>(i,j)=255;
+
+				//change
+				max_dmat_mask_new.at<uchar>(i,j)=255;
+
+			}
+			
+			//change
+			if (abs(depth_current-depth_max)<30&&mask_depth_max!=0)
+			{
+				fgMask.at<uchar>(i,j)=255;
+			}
+
+			if (abs(depth_old-depth_current)<20&&old_mask_flag!=0)
+			{
+				fgMask.at<uchar>(i,j)=255;
+			}
+			max_dmat.at<ushort>(i,j)=max(depth_current,depth_max);
+
+			//change
+			int fgmask_new=fgMask.at<uchar>(i,j);
+			if (fgmask_new==0)
+			{
+				max_dmat_mask_new.at<uchar>(i,j)=0;
+			}
+
+		}
+	}
+	imshow("fgMask raw",fgMask);
+// 	int erode_size=1;
+// 	Mat element1 = getStructuringElement( MORPH_RECT,
+// 		Size( 2*erode_size + 1, 2*erode_size+1 ),
+// 		Point( erode_size, erode_size ) );
+	//erode( fgMask,fgMask,element1);
+	//fgMask=connectedAreaFilter(fgMask);
+	vector<vector<Point>> c;
+	Mat tmp1=fgMask.clone();
+	findContours(fgMask,c,CV_RETR_CCOMP,CV_CHAIN_APPROX_NONE);
+	Mat tmp=Mat::zeros(fgMask.rows,fgMask.cols,CV_8U);
+	for (int i=0;i<c.size();++i)
+	{
+		//double area=contourArea(c[i]);
+		double area=c[i].size();
+		if (area>100)
+		{
+			vector<vector<Point>> contour;
+			contour.push_back(c[i]);
+			drawContours(tmp,contour,-1,255,CV_FILLED);
+		}
+	}
+	tmp=tmp&tmp1;
+	imshow("fgMask",tmp);
+	//imwrite("fgMask"+name+".jpg",tmp);
+	fgMask_old=tmp.clone();
+
+	//change
+	max_dmat_mask=max_dmat_mask_new&tmp;
+	//imshow("max depth mask",max_dmat_mask);
+// 	Mat max_depth_show,depth_show;
+// 	dmat.convertTo(depth_show,CV_8U,255.0/9000,0);
+// 	max_dmat.convertTo(max_depth_show,CV_8U,255.0/9000,0);
+	//imshow("depth",depth_show);
+	//imwrite("depth"+name+".jpg",depth_show);
+	//imshow("max depth",max_depth_show);
+	//imwrite("max depth"+name+".jpg",max_depth_show);
+
+	return tmp;*/
+}
+
+/*
+Mat segment::buildMaxDepth(const Mat& dmat,Mat& max_dmat,const Mat& dmat_old,Mat& fgMask_old,Mat& max_dmat_mask)
+{
+	Mat fgMask=Mat::zeros(dmat.rows,dmat.cols,CV_8U);
+	//Mat max_dmat_mask_new=Mat::zeros(dmat.rows,dmat.cols,CV_8U);
+	if (max_dmat.data==NULL)
+	{
+		max_dmat=dmat.clone();
+		imshow("fgMask1",fgMask);
+		fgMask_old=fgMask.clone();
+		//max_dmat_mask=max_dmat_mask_new.clone();
+		return fgMask;
+	}
+	//更新max_dmat
+	//max_dmat_mask_new=max_dmat_mask.clone();
+	//cout<<"depth: "<<dmat.at<ushort>(120,160)<<endl;
+	Mat d=Mat::zeros(dmat.rows,dmat.cols,CV_8U);
+	Point p;p.x=160;p.y=120;
+	circle(d,p,5,255);
+	//imshow("test",d);
+	for (int i=0;i!=max_dmat.rows;++i)
+	{
+		for (int j=0;j!=max_dmat.cols;++j)
+		{
+			int depth_current=dmat.at<ushort>(i,j);
+			int depth_max=max_dmat.at<ushort>(i,j);
+			int depth_old=dmat_old.at<ushort>(i,j);
+			//int max_mask=max_dmat_mask.at<uchar>(i,j);
+			if (depth_current!=0&&depth_current<int(depth_max*0.97))
+			{
+				//当前像素有效并且比最大深度小，认为是前景
+				fgMask.at<uchar>(i,j)=255;
+			}
+			if (depth_current!=0&&depth_old==0)
+			{
+				//手滑动时无效区域会出现问题
+				//fgMask.at<uchar>(i,j)=255;
+			}
+			if (depth_current>depth_max+10&&depth_current-depth_old<50)
+			{
+				//当前深度比最大深度大，并且比上一帧深度大的不多，认为是前景
+				//处理人后退时的情况
+				fgMask.at<uchar>(i,j)=255;
+				//max_dmat_mask_new.at<uchar>(i,j)=255;
+			}
+			int old_mask_flag=fgMask_old.at<uchar>(i,j);
+			if (abs(depth_old-depth_current)<50&&old_mask_flag!=0)
+			{
+				//当前深度与上一帧深度差异不大，并且上一帧是前景，认为是前景
+				//处理人后退之后站着不动的情况
+				fgMask.at<uchar>(i,j)=255;
+				//max_dmat_mask_new.at<uchar>(i,j)=255;
+			}
+//			if (depth_current>depth_max-10&&depth_current-depth_old>10&&max_mask!=0)
+			//if (depth_current>depth_max-10&&depth_current-depth_old>100&&max_mask!=0)
+//			{
+				//fgMask.at<uchar>(i,j)=255;
+//			}
+			//更新max_dmat_mask
+// 			int mask_new=fgMask.at<uchar>(i,j);
+// 			if (mask_new==0)
+// 			{
+// 				max_dmat_mask_new.at<uchar>(i,j)=0;
+// 			}
+		}
+	}
+	//max_dmat_mask=max_dmat_mask_new.clone();
+	imshow("fgMask raw",fgMask);
+	//imshow("max depth mask",max_dmat_mask);
+	// 	int erode_size=1;
+	// 	Mat element1 = getStructuringElement( MORPH_RECT,
+	// 		Size( 2*erode_size + 1, 2*erode_size+1 ),
+	// 		Point( erode_size, erode_size ) );
+	// 	erode( fgMask,fgMask,element1);
+	vector<vector<Point>> c;
+	Mat tmp1=fgMask.clone();
+	findContours(fgMask,c,CV_RETR_CCOMP,CV_CHAIN_APPROX_NONE);
+	Mat tmp=Mat::zeros(fgMask.rows,fgMask.cols,CV_8U);
+	for (int i=0;i<c.size();++i)
+	{
+		double area=contourArea(c[i]);
+		int num=c[i].size();
+		//if (num>300)
+		if (area>1000)
+		{
+			drawContours(tmp,c,i,255,CV_FILLED);
+		}
+	}
+	tmp=tmp1&tmp;
+	imshow("fgMask",tmp);
+	fgMask_old=tmp.clone();
+	return tmp;
+}
+*/
+Mat segment::connectedAreaFilter(const cv::Mat& fgMask,int thresh/*=-1*/)
+{
+	int row=fgMask.rows,col=fgMask.cols;
+	Mat tmp=fgMask.clone();
+	if (thresh<0)
+	{
+		thresh=row*col/30;
+	}
+	Mat res=Mat::zeros(row,col,CV_8U);
+	for (int i=0;i<row;++i)
+	{
+		for (int j=0;j<col;++j)
+		{
+			int flag=tmp.at<uchar>(i,j);
+			if (flag!=0)
+			{
+				int number;
+				Point p;
+				p.x=j;p.y=i;
+				Mat mask=binary_region_grow(tmp,p,number);
+				if (number>=thresh)
+				{
+					res=res|mask;
+				}
+				threshold(mask,mask,128,255,THRESH_BINARY_INV);
+				tmp=tmp&mask;
+			}
+		}
+	}
+	return res;
+}
+Mat segment::binary_region_grow(const cv::Mat& fgMask,cv::Point p,int& number)
+{
+	number=0;
+	queue<Point> q;
+	Mat mask=Mat::zeros(fgMask.rows,fgMask.cols,CV_8U);
+	Mat res=Mat::zeros(fgMask.rows,fgMask.cols,CV_8U);
+	mask.at<uchar>(p.y,p.x)=255;
+	++number;
+	q.push(p);
+	res.at<uchar>(p.y,p.x)=255;
+	while (q.size()!=0)
+	{
+		Point2i p_tmp;
+
+		p_tmp=q.front();
+		q.pop();
+		for (int i=-1;i<2;i+=2)
+		{
+			double x=p_tmp.x+i,y=p_tmp.y;
+			if (y>=0 && y<fgMask.rows && x>=0 && x<fgMask.cols)
+			{
+				if (mask.at<uchar>(y,x)==0)
+				{
+					mask.at<uchar>(y,x)=255;
+					int tmp1=fgMask.at<uchar>(y,x);
+					if (tmp1!=0)
+					{
+						Point2i p1;
+						p1.x=x;p1.y=y;
+						++number;
+						q.push(p1);
+						res.at<uchar>(y,x)=255;
+					}
+				}
+			}
+			x=p_tmp.x,y=p_tmp.y+i;
+			if (y>=0 && y<fgMask.rows && x>=0 && x<fgMask.cols)
+			{
+				if (mask.at<uchar>(y,x)==0)
+				{
+					mask.at<uchar>(y,x)=255;
+					int tmp1=fgMask.at<uchar>(y,x);
+					if (tmp1!=0)
+					{
+						Point2i p1;
+						p1.x=x;p1.y=y;
+						++number;
+						q.push(p1);
+						res.at<uchar>(y,x)=255;
+					}
+				}
+			}
+		}
+	}
+	return res;
+}
+//实现利用真实的fgMask的反重置最大深度图
+void segment::reset_max_depth(const Mat& dmat,const Mat& fgMask,const Mat& max_dmat_old,Mat& max_dmat_new)
+{
+	max_dmat_new=max_dmat_old.clone();
+	for (int i=0;i<dmat.rows;++i)
+	{
+		for (int j=0;j<dmat.cols;++j)
+		{
+			if (fgMask.at<uchar>(i,j)==0)
+			{
+				max_dmat_new.at<ushort>(i,j)=dmat.at<ushort>(i,j);
+			}
+		}
+	}
 }

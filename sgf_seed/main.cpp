@@ -10,11 +10,59 @@
 #include<vector>
 #include<fstream>
 #include<time.h>
+#include<map>
 using namespace std;
 using namespace cv;
 using namespace sgf;
 vector<IplImage*> depths,images;
 void OpenNItoOpenCV();
+vector<Mat> makeBackgroundModel(const std::vector<cv::Mat>& dmats)
+{
+	int row=dmats[0].rows,col=dmats[0].cols;
+	Mat res_avg=Mat::zeros(row,col,CV_16U);
+	Mat res_maxdepth=Mat::zeros(row,col,CV_16U);
+	Mat res_maxnum=Mat::zeros(row,col,CV_16U);
+	for (int i=0;i<row;++i)
+	{
+		for (int j=0;j<col;++j)
+		{
+			//对每一个像素，计算该像素背景值，可以使用的方法：均值，最大值，众数
+			int num=0;
+			int max_depth=0;
+			int avg_depth=0;
+			//map<int,int> most_depth;
+			for (int k=0;k<dmats.size();++k)
+			{
+				int depth=dmats[k].at<ushort>(i,j);
+				if (depth!=0)
+				{
+					++num;
+					avg_depth+=depth;
+					//most_depth.insert(depth);
+				}
+				max_depth=max(max_depth,depth);
+				//找最大的众数
+// 				map<int,int>::iterator it;
+// 				int 
+// 				for (it=most_depth.begin();it!=most_depth.end();++it)
+// 				{
+// 
+// 				}
+			}
+			if (num!=0)
+			{
+				avg_depth/=num;
+			}
+			res_avg.at<ushort>(i,j)=avg_depth;
+			res_maxdepth.at<ushort>(i,j)=max_depth;
+		}
+	}
+	vector<Mat> res;
+	res.push_back(res_avg);
+	res.push_back(res_maxdepth);
+
+	return res;
+}
 int main(int argc, char* argv[])
 {
 	//string video = "segment_test_1.oni";
@@ -37,7 +85,7 @@ void OpenNItoOpenCV()
 	nRetVal=g_context.Init();     //上下文对象初始化          
 	xn::Player plyr;
 	g_context.OpenFileRecording(sFilename.c_str(), plyr);     //打开已有的oni文件
-plyr.SeekToFrame("MyDepth", 999, XN_PLAYER_SEEK_SET);
+	plyr.SeekToFrame("MyDepth", 999, XN_PLAYER_SEEK_SET);
 	xn::ImageGenerator g_image;     //创建image generator
 	nRetVal=g_context.FindExistingNode(XN_NODE_TYPE_IMAGE,g_image);     //获取oni文件中的image节点
 	xn::DepthGenerator g_depth;     //创建depth generator
@@ -54,6 +102,7 @@ plyr.SeekToFrame("MyDepth", 999, XN_PLAYER_SEEK_SET);
 	//保存oni深度图像到IplImage*格式vector
 	XnUInt32 frameDepth = 0;
 	int number=0;
+	int spend=0;
 
 	//构造类segment，进行数据处理和显示
 	//segment my_seg(true,true,true,true,true,false);
@@ -66,6 +115,12 @@ plyr.SeekToFrame("MyDepth", 999, XN_PLAYER_SEEK_SET);
 // 	writer4=VideoWriter("all_methods.avi",fourcc,30,Size(320,240),false);
 
 	int begin=clock();
+	vector<Mat> depth_array;
+	vector<Mat> res;
+	Mat depth_old;
+	Mat max_depth;
+	Mat fgMask_old;
+	Mat max_dmat_mask;
 	while(1)
 	{    
 		nRetVal = g_context.WaitOneUpdateAll(g_depth);     //更新深度数据
@@ -118,9 +173,19 @@ plyr.SeekToFrame("MyDepth", 999, XN_PLAYER_SEEK_SET);
 
 			vector<Point> seed;
 			Mat mask;
+			if (depth_old.data==NULL)
+			{
+				depth_old=depth.clone();
+			}
 
-			seed=my_seg.seedHeadTempMatch(depth,true);
+			//seed=my_seg.seedHeadTempMatch(depth,true);
+			//mask=my_seg.buildMaxDepth(depth,max_depth,depth_old,fgMask_old);
+			int t=clock();
+			my_seg.buildMaxDepth(depth,depth_old,max_depth,max_depth,fgMask_old,fgMask_old,max_dmat_mask,max_dmat_mask);
+			cout<<"time: "<<clock()-t<<endl;
+			spend+=clock()-t;
 			waitKey(1);
+			depth_old=depth.clone();
 			//seed=my_seg.seedSGF(depth,true);
 			//seed=my_seg.seedSGF(depth,true,mask);
 
@@ -131,12 +196,57 @@ plyr.SeekToFrame("MyDepth", 999, XN_PLAYER_SEEK_SET);
 			//my_seg.find_realHead();
 
 			
-			my_seg.output(my_seg.videoname+".txt");
+			//my_seg.output(my_seg.videoname+".txt");
+
+// 			if (number==0)
+// 			{
+// 				depth_old=depth;
+// 			}
+// 			else
+// 			{
+// 				Mat depth_dif=depth-depth_old;
+// 			}
+// 
+// 			if (number<20)
+// 			{
+// 				depth_array.push_back(depth);
+// 			}
+// 			else if (number==20)
+// 			{
+// 				res=makeBackgroundModel(depth_array);
+// 				Mat gray_avg,gray_max;
+// 				res[0].convertTo(gray_avg,CV_8U,255/9000.0,0);
+// 				res[1].convertTo(gray_max,CV_8U,255/9000.0,0);
+// 				imshow("background avg",gray_avg);
+// 				imshow("background max depth",gray_max);
+// 			}
+// 			else
+// 			{
+// 				Mat difference_avg=Mat::zeros(depth.rows,depth.cols,CV_8U);
+// 				Mat difference_max=Mat::zeros(depth.rows,depth.cols,CV_8U);
+// 				for (int i=0;i<depth.rows;++i)
+// 				{
+// 					for (int j=0;j<depth.cols;++j)
+// 					{
+// 						if (abs(depth.at<ushort>(i,j)-res[0].at<ushort>(i,j))>50&&depth.at<ushort>(i,j)!=0)
+// 						{
+// 							difference_avg.at<uchar>(i,j)=255;
+// 						}
+// 						if (abs(depth.at<ushort>(i,j)-res[1].at<ushort>(i,j))>50&&depth.at<ushort>(i,j)!=0)
+// 						{
+// 							difference_max.at<uchar>(i,j)=255;
+// 						}
+// 					}
+// 				}
+// 				imshow("difference avg",difference_avg);
+// 				imshow("difference max",difference_max);
+// 			}
+// 			waitKey(1);
 
 			//break;
-			if(27==c)break;
+			if(27==c) break;
+			++number;
 		}  
- 		++number;
 // 		if (number==800||number==200||number==500)
 // 		{
 // 			cout<<number<<endl;
@@ -161,6 +271,7 @@ plyr.SeekToFrame("MyDepth", 999, XN_PLAYER_SEEK_SET);
 // 		writer3.write(res3);
 // 		writer4.write(res);
 	}
+	cout<<"avg time:"<<spend/number<<endl;
 	cout<<"time cost:"<<clock()-begin<<endl;
 	system("pause");
 	//保存oni彩色图像到IplImage*格式vector
