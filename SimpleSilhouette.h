@@ -4,8 +4,10 @@
 #include <iostream>
 #include <vector>
 #include <queue>
-#include <opencv2/opencv.hpp>
 #include <ctime>
+#include <type_traits>
+
+#include <opencv2/opencv.hpp>
 
 #include "CapgSkeleton.h"
 #include "bodyPartRecognizer.h"
@@ -34,6 +36,8 @@ extern int thickLimit;// = thickLimitDefault; //毫米
 //一些调试颜色：
 extern Scalar cwhite, cred, cgreen, cblue, cyellow;
 
+#define zc_assert( expr ) if(!!(expr)) ; else cv::error( cv::Error::StsAssert, #expr, CV_Func, __FILE__, __LINE__ )
+
 namespace zc{
 	class HumanObj;
 
@@ -46,12 +50,36 @@ namespace zc{
 	BPRecognizer* getBprAndLoadFeature(const string &featurePath);
 #endif //CV_VERSION_EPOCH
 
+	static const char *matNodeName = "mat";
+	static const char *matVecName = "mat_vec";
+
 	//存 mat-vec 到 FileStorage
-	void saveVideo(const vector<Mat> &matVec, const char *fname);
+	//void saveVideo(const deque<Mat> &matVec, const char *fname);
+
+	//@brief存 mat-vec 到 FileStorage
+	//@param matContainer: 容器 vector or deque 
+	template<typename T>
+	void saveVideo(const T &matContainer, const char *fname){
+		//CV_Assert((std::is_same<T::value_type, int>::value)); //因有逗号，必须有小括号
+		static_assert(std::is_same<T::value_type, cv::Mat>::value, "T must be a Mat container!");
+
+		FileStorage fstorage(fname, FileStorage::WRITE);
+		
+		fstorage << matVecName << "[";
+
+		size_t mvecSz = matContainer.size();
+		for (size_t i = 0; i < mvecSz; i++){
+			//fstorage << matNodeName << matVec[i];
+			fstorage << matContainer[i];
+		}
+		fstorage << "]";
+
+		fstorage.release();
+	}//saveVideo
 
 	//读 FileStorage
 	//@return mat-vec
-	vector<Mat> loadVideo(const char *fname);
+	deque<Mat> loadVideo(const char *fname);
 
 	Mat simpleMask(const Mat &curMat, bool debugDraw = false);
 
@@ -231,19 +259,23 @@ namespace zc{
 	//@deprecated 未实现，因为将仅等价于 seedUseHeadAndBodyCont + simpleRegionGrow
 	vector<Mat> findFgMasksUseHeadAndBodyCont(Mat &dmat, bool debugDraw = false);
 
-	//@brief 
+	//@brief 目前整合了 seedNoMove, calcPotentialMask, getRgMaskVec, simpleRegionGrow, mergeFgMaskVec
 	//@param prevFgMaskVec: 前一帧的最终 fgMaskVec
 	//@param currFgMskVec: 当前帧步骤(B)找到的初始前景(可能是新人,可能不)
 	//@param 新的 fgMaskVec
 	//@param moveMaskMat, 运动前景蒙板，目前用 MOG2
 	vector<Mat> trackingNoMove(Mat dmat, const vector<Mat> &prevFgMaskVec, const vector<Mat> &currFgMskVec, int noMoveThresh = 55, Mat moveMaskMat = Mat(), bool debugDraw = false);
 
+	//@brief 从trackingNoMove抽取而来
+	Mat calcPotentialMask(const Mat &dmat, const Mat moveMaskMat, const vector<Mat> &prevFgMaskVec, int noMoveThresh, bool debugDraw = false);
+
 	//@brief 重构trackingNoMove, 得到限制增长mask-vec
 	//对于多人重叠，且同时运动的情形，用 dist-map, 对motion做分割
 	//@param prevFgMaskVec: 上一帧检测到的人体mask-vec
 	//@param moveMask: 运动检测(MOG, etc.)得到的整个前景 mask
-	vector<Mat> getRgMaskVec(const Mat &dmat, const vector<Mat> &prevFgMaskVec, Mat moveMask, bool debugDraw = false);
+	vector<Mat> getRgMaskVec(const Mat &dmat, const vector<Mat> &prevFgMaskVec, Mat currPotentialMask, bool debugDraw = false, OutputArray _debug_mat = noArray());
 
+	//@deprecated 仍用 trackingNoMove, 目前其整合了 seedNoMove, calcPotentialMask, getRgMaskVec, simpleRegionGrow, mergeFgMaskVec
 	//@brief 重构trackingNoMove, 只用方案二, 且将前后getRgMaskVec, merge部分解耦(mergeFgMaskVec)
 	//@param prevFgMaskVec: 前一帧的最终 fgMaskVec
 	//@param rgMaskVec: 每个prevFgMaskVec上每个track到的种子点增长时的限制mask, 预先生成好
@@ -312,7 +344,8 @@ namespace zc{
 	Mat maskMoveAndNoMove(Mat dmat, vector<Mat> prevFgMaskVec, int noMoveThresh = 50, int history = 100, double varThresh = 1, double learnRate = -1, bool debugDraw = false, OutputArray _debug_mat = noArray());
 
 	//@brief moveMask 传入运动检测得到的FG; 目前暂用 MOG2结果
-	//实际上应该每个mask单独长成一个new-mask, 此处简化测试, N个长成一个:
+	//实际上应该每个mask单独长成一个new-mask, 此处简化测试, N个长成一个
+	//【注意】@param noMoveThresh 在v2版本未使用
 	Mat maskMoveAndNoMove(Mat dmat, Mat moveMask, vector<Mat> prevFgMaskVec, int noMoveThresh = 50, bool debugDraw = false, OutputArray _debug_mat = noArray());
 
 	//这个设计有用？ 没想好。。
@@ -451,20 +484,6 @@ namespace zc{
 
 	//@param fgMsk: 前景蒙板， 白色(uchar_max)为有效区域
 	CapgSkeleton calcSkeleton(const Mat &dmat, const Mat &fgMsk);
-
-
-#pragma region //孙国飞头部种子点
-
-	//单例模式，返回单例指针
-	sgf::segment* loadSeedHeadConf(const char *confFn = "./sgf_seed/config.txt", const char *templFn = "./sgf_seed/headtemplate.bmp");
-
-	//孙国飞实现的头部种子点方法，的包装方法
-	vector<Point> seedHeadTempMatch(const Mat &dmat, bool debugDraw = false);
-
-	//孙国飞获取头部大小的包装方法
-	vector<double> getHeadSizes();
-
-#pragma endregion //孙国飞头部种子点
 
 #pragma region //从 opencv300 拷贝 boundingRect 
 	cv::Rect boundingRect(InputArray array);
@@ -607,16 +626,57 @@ namespace zc{
 	//@brief 利用maxDmat，稳定背景做diff，扣除鬼影；利用maxDmat-MOG，扣除伪鬼影
 	Mat getMaxDepthBgMask(Mat dmat, bool reInit = true, bool debugDraw = false);
 
+	//@brief 将 maskVec 合并为一个mask
+	//@param maskSize: 若 maskVec 空的， 则以此生成一个全黑mask
+	Mat maskVec2mask(cv::Size maskSize, const vector<Mat> &maskVec);
+
+// 	extern enum LCPF_MODE;
+	enum LCPF_MODE
+	{
+		CONT_LENGTH	//contour 周长判定
+		,CONT_AREA	//contour 面积判定
+	};
+
+	//@brief 对 mask 找轮廓，去掉轮廓长度较小的区域
+	//@param mode CONT_LENGTH, 使用轮廓周长判定(qvga~0.2ms); CONT_AREA, 使用轮廓面积判定(qvga~0.24ms)
+	Mat largeContPassFilter(const Mat &mask, LCPF_MODE mode = CONT_LENGTH, int contSizeThresh = 10);
+
+}//zc-测试代码放这里
+
+using zc::MyBGSubtractor;
+
+namespace sgf{
+#pragma region //孙国飞头部种子点
+
+	//单例模式，返回单例指针
+	sgf::segment* loadSeedHeadConf(const char *confFn = "./sgf_seed/config.txt", const char *templFn = "./sgf_seed/headtemplate.bmp");
+
+	//孙国飞实现的头部种子点方法，的包装方法
+	vector<Point> seedHeadTempMatch(const Mat &dmat, bool debugDraw = false);
+
+	//孙国飞获取头部大小的包装方法
+	vector<double> getHeadSizes();
+
+#pragma endregion //孙国飞头部种子点
+
+	//@brief 孙国飞 "头部种子点 + 运动直方图峰值区域联合判定" 包装方法
 	vector<Mat> separateMasksMovingHead(Mat dmat, vector<Mat> &inMaskVec, Mat &mogMask, bool debugDraw = false);
 
 	//@brief 孙国飞V形分割方案的包装方法，接口改为 inMaskVec，非单一mask
 	vector<Mat> separateMasksContValley(Mat dmat, vector<Mat> &inMaskVec, bool debugDraw = false);
 
-	//@brief 将 maskVec 合并为一个mask
-	//@param maskSize: 若 maskVec 空的， 则以此生成一个全黑mask
-	Mat maskVec2mask(cv::Size maskSize, const vector<Mat> &maskVec);
-}//zc-测试代码放这里
+	//@brief 孙国飞实现：使用最大深度矩阵获取 "允许增长mask"
+	Mat calcPotentialMask(const cv::Mat& dmat, const cv::Mat& dmat_old);
 
-using zc::MyBGSubtractor;
+	//@brief 重置几个全局状态量, 清空几个状态量
+	void resetPotentialMask();
+
+	//@brief 主循环得到真实前景mask-vec之后, "允许增长mask"置为 mask-vec-whole
+	void setPotentialMask(Mat newFgMask);
+
+	//@brief 返回全局变量 _fgMask 值, 无计算, 注意与 calcPotentialMask 区别
+	Mat getPotentialMask();
+
+}
 
 #endif //_SIMPLE_SILHOUETTE_
