@@ -2166,7 +2166,17 @@ namespace zc{
 #if 0	//我实现的 validMsk 方法
 		Mat validMsk = zc::calcPotentialMask(dmat, moveMaskMat, prevFgMaskVec, noMoveThresh, debugDraw);
 #elif 1	//孙国飞实现的 validMsk 方法
+		clock_t begt;
+		begt = clock();
+
 		Mat validMsk = sgf::calcPotentialMask(dmat, getPrevDmat());
+
+		static int fcnt = 0;
+		static float sumt = 0;
+		fcnt++;
+		sumt += clock() - begt;
+		cout << "calcPotentialMask.ts: " << sumt / fcnt << endl;	//1.21ms
+
 #endif
 
 		if (debugDraw)
@@ -3547,6 +3557,7 @@ namespace zc{
 			imshow("ctmp-trackingNoMove", ctmp);
 		}
 
+		//最后发现方案一,二都需要后处理:
 #if 01 //D.后处理，对突然分离成几部分的前景，做分离、过滤处理
 		begt = clock();
 
@@ -3571,10 +3582,15 @@ namespace zc{
 
 #if !SOLUTION_1	//增长结果 反馈到 potMsk
 		//if (resVec.size() > 0){
-		sgf::setPotentialMask(maskVec2mask(dmat.size(), fgMskVec));
+		sgf::setPotentialMask(dmat, maskVec2mask(dmat.size(), fgMskVec));
 		Mat potMskAfter = sgf::getPotentialMask();
-		if (debugDraw)
+		if (debugDraw){
 			imshow("potMskAfter", potMskAfter);
+			imshow("sgf::_fgMask", sgf::_fgMask);
+			imshow("sgf::_max_dmat", sgf::_max_dmat);
+			imshow("sgf::_max_dmat_mask", sgf::_max_dmat_mask);
+
+		}
 		//}
 #endif
 
@@ -4660,18 +4676,23 @@ namespace sgf{
 		_max_dmat_mask.release();
 	}//resetPotentialMask
 
-	void setPotentialMask(Mat newFgMask){
-		_fgMask = newFgMask.clone();
+	void setPotentialMask(const Mat &dmat, Mat newFgMask){
 		//上面不管用, 尝试同时重置 max-dmat-fg-flag:
-		_max_dmat_mask.setTo(0, _fgMask == 0);
+		_max_dmat_mask.setTo(0, (newFgMask == 0 & dmat != 0));
 
 		//上面还不管用, 尝试 _max_dmat 非fg置零, 下一帧自动更新
-		//_max_dmat.setTo(0, _fgMask == 0);
+		Mat region2reset = _fgMask - newFgMask;
+		_max_dmat.setTo(0, region2reset);
+		cv::add(_max_dmat, dmat, _max_dmat, region2reset);
+
+		//放在最后
+		_fgMask = newFgMask.clone();
+
 	}//setPotentialMask
 
 	cv::Mat getPotentialMask(){
 		return _fgMask;
-	}
+	}//getPotentialMask
 
 
 #endif	//孙国飞获取允许增长mask方法

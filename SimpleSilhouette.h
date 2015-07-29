@@ -665,6 +665,11 @@ namespace sgf{
 	//@brief 孙国飞V形分割方案的包装方法，接口改为 inMaskVec，非单一mask
 	vector<Mat> separateMasksContValley(Mat dmat, vector<Mat> &inMaskVec, bool debugDraw = false);
 
+	extern Mat _max_dmat,	//最大深度图
+		_fgMask,	//最终调用者需要的数据
+		_max_dmat_mask;	//最大深度图对应的flag-mat
+
+
 	//@brief 孙国飞实现：使用最大深度矩阵获取 "允许增长mask"
 	Mat calcPotentialMask(const cv::Mat& dmat, const cv::Mat& dmat_old);
 
@@ -672,11 +677,11 @@ namespace sgf{
 	void resetPotentialMask();
 
 	//@brief 主循环得到真实前景mask-vec之后, "允许增长mask"置为 mask-vec-whole
-	void setPotentialMask(Mat newFgMask);
+	void setPotentialMask(const Mat &dmat, Mat newFgMask);
 
 	//@brief 返回全局变量 _fgMask 值, 无计算, 注意与 calcPotentialMask 区别
 	Mat getPotentialMask();
 
-}
+}//namespace sgf
 
 #endif //_SIMPLE_SILHOUETTE_
