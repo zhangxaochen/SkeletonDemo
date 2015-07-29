@@ -181,7 +181,7 @@ void OpenNItoOpenCV()
 			//seed=my_seg.seedHeadTempMatch(depth,true);
 			//mask=my_seg.buildMaxDepth(depth,max_depth,depth_old,fgMask_old);
 			int t=clock();
-			my_seg.buildMaxDepth(depth,depth_old,max_depth,max_depth,fgMask_old,fgMask_old,max_dmat_mask,max_dmat_mask);
+			sgf::buildMaxDepth(depth,depth_old,max_depth,max_depth,fgMask_old,fgMask_old,max_dmat_mask,max_dmat_mask);
 			cout<<"time: "<<clock()-t<<endl;
 			spend+=clock()-t;
 			waitKey(1);

@@ -15,6 +15,13 @@ implement of human detection using depth information by Kinect.
 
 namespace sgf
 {
+	//根据当前深度图更新最大深度图，并且返回前景mask
+	//参数共有八个 dmat 当前深度图，dmat_old 上一帧深度图，max_dmat_old 上一帧最大深度图，max_dmat_new 当前最大深度图（输出）
+	//             fgMask_old 上一帧的前景，fgMask_new 当前帧前景（输出），max_dmat_mask_old，上一帧最大深度mask，max_dmat_mask_new，当前最大深度mask（输出）
+	void buildMaxDepth(const cv::Mat& dmat,const cv::Mat& dmat_old,const cv::Mat& max_dmat_old,cv::Mat&max_dmat_new,const cv::Mat& fgMask_old,cv::Mat& fgMask_new,const cv::Mat& max_dmat_mask_old,cv::Mat& max_dmat_mask_new);
+	//cv::Mat buildMaxDepth(const cv::Mat& dmat,cv::Mat& max_dmat,const cv::Mat& dmat_old,cv::Mat& fgMask_old);
+	void reset_max_depth(const cv::Mat& dmat,const cv::Mat& fgMask,const cv::Mat& max_dmat_old,cv::Mat& max_dmat_new);
+
 	class segment
 	{
 	public:
@@ -50,15 +57,9 @@ namespace sgf
 		std::vector<cv::Mat> get_seperate_masks(const cv::Mat& fgMask,const cv::Mat& mogMask,std::vector<cv::Point> headPoints=std::vector<cv::Point>(),std::vector<double> headSize=std::vector<double>(),bool showResult=false,bool drawHist=false);
 		std::vector<double> get_headSize();
 		std::vector<cv::Mat> findfgMasksMovingHead(const cv::Mat& mog_fg,std::vector<cv::Point> headPoints=std::vector<cv::Point>(),std::vector<double> headSize=std::vector<double>(),int range=2,int thresh=100,bool drawResult=false);
-		//根据当前深度图更新最大深度图，并且返回前景mask
-		//参数共有八个 dmat 当前深度图，dmat_old 上一帧深度图，max_dmat_old 上一帧最大深度图，max_dmat_new 当前最大深度图（输出）
-		//             fgMask_old 上一帧的前景，fgMask_new 当前帧前景（输出），max_dmat_mask_old，上一帧最大深度mask，max_dmat_mask_new，当前最大深度mask（输出）
-		void buildMaxDepth(const cv::Mat& dmat,const cv::Mat& dmat_old,const cv::Mat& max_dmat_old,cv::Mat&max_dmat_new,const cv::Mat& fgMask_old,cv::Mat& fgMask_new,const cv::Mat& max_dmat_mask_old,cv::Mat& max_dmat_mask_new);
-		//cv::Mat buildMaxDepth(const cv::Mat& dmat,cv::Mat& max_dmat,const cv::Mat& dmat_old,cv::Mat& fgMask_old);
 		cv::Mat connectedAreaFilter(const cv::Mat& fgMask,int thresh=-1);
 		cv::Mat binary_region_grow(const cv::Mat& fgMask,cv::Point p,int& number);
-		void reset_max_depth(const cv::Mat& dmat,const cv::Mat& fgMask,const cv::Mat& max_dmat_old,cv::Mat& max_dmat_new);
-	private:
+		private:
 		std::vector<cv::Point2i> get_seed();
 		std::vector<cv::Point2i> get_seed_raw();
 		void fill_holes();

@@ -6,7 +6,43 @@
 using namespace sgf;
 using namespace std;
 using namespace cv;
+enum LCPF_MODE
+{
+	CONT_LENGTH	//contour 周长判定
+	,CONT_AREA	//contour 面积判定
+};
+cv::Mat largeContPassFilter(const Mat &mask, LCPF_MODE mode /*= CONT_LENGTH*/, int contSizeThresh /*= 10*/)
+{
+	Mat res = mask.clone();
 
+	vector<vector<Point>> contours;
+	findContours(mask.clone(), contours, RETR_EXTERNAL, CHAIN_APPROX_NONE);
+
+	size_t contSz = contours.size();
+
+#if 0	//做减法(取反求交), qvga~1.2ms
+	//批量绘制要丢弃的区域，然后 mask -= maskRemove
+	Mat maskRemove = Mat::zeros(mask.size(), CV_8UC1);
+	for (size_t i = 0; i < contSz; i++){
+		if (mode == CONT_LENGTH && contours[i].size() < contSizeThresh	//1.21ms
+			|| mode == CONT_AREA && contourArea(contours[i]) < contSizeThresh) //1.29ms
+			drawContours(maskRemove, contours, i, UCHAR_MAX, -1);
+	}
+
+	res -= maskRemove;
+#elif 1	//做加法(求交), 更高效, qvga~0.22ms
+	Mat maskIntersect = Mat::zeros(mask.size(), CV_8UC1);
+	for (size_t i = 0; i < contSz; i++){
+		if (mode == CONT_LENGTH && contours[i].size() >= contSizeThresh
+			|| mode == CONT_AREA && contourArea(contours[i]) >= contSizeThresh)
+			drawContours(maskIntersect, contours, i, UCHAR_MAX, -1);
+	}
+
+	res &= maskIntersect;
+#endif	//减法、加法对比
+
+	return res;
+}//largeContPassFilter
 // segment::segment(bool show_result1,bool show_distance_map1,bool show_edge1,
 // 	bool do_region_grow1,bool show_responses1,bool show_histogram1)
 // {
@@ -2024,7 +2060,7 @@ vector<Mat> segment::findfgMasksMovingHead(const cv::Mat& mog_fg,std::vector<cv:
 	return res;
 }
 
-void segment::buildMaxDepth(const cv::Mat& dmat,const cv::Mat& dmat_old,const cv::Mat& max_dmat_old,cv::Mat&max_dmat_new,const cv::Mat& fgMask_old,cv::Mat& fgMask_new,const cv::Mat& max_dmat_mask_old,cv::Mat& max_dmat_mask_new)
+void sgf::buildMaxDepth(const cv::Mat& dmat,const cv::Mat& dmat_old,const cv::Mat& max_dmat_old,cv::Mat&max_dmat_new,const cv::Mat& fgMask_old,cv::Mat& fgMask_new,const cv::Mat& max_dmat_mask_old,cv::Mat& max_dmat_mask_new)
 {
 	/*
 	Mat fgMask=Mat::zeros(dmat.rows,dmat.cols,CV_8U);
@@ -2135,6 +2171,7 @@ void segment::buildMaxDepth(const cv::Mat& dmat,const cv::Mat& dmat_old,const cv
 	return tmp;
 	*/
 
+	//int t1=clock();
 	Mat fgMask=Mat::zeros(dmat.rows,dmat.cols,CV_8U);
 	//change
 	
@@ -2149,16 +2186,28 @@ void segment::buildMaxDepth(const cv::Mat& dmat,const cv::Mat& dmat_old,const cv
 	}
 	//更新max_dmat
 
+
 	//改成矩阵运算
-	/*fgMask=((dmat!=0)&(dmat<(max_dmat*0.97)))
-		+((dmat>max_dmat)&(dmat<(dmat_old+50)))
-		+((abs(dmat-max_dmat)<30)&(max_dmat_mask!=0))
+	Mat max_dmat_tmp=max_dmat_old.clone();
+	max_dmat_tmp.convertTo(max_dmat_tmp,CV_32F);
+	Mat max_dmat_multiply;
+	cv::multiply(max_dmat_tmp,max_dmat_tmp,max_dmat_multiply);
+	Mat thresh_mat=1-0.0016*max_dmat_multiply/1e6+0.0016*max_dmat_tmp/1e3-0.02;
+	Mat thresh1;cv::multiply(max_dmat_tmp,thresh_mat,thresh1);
+	thresh1.convertTo(thresh1,CV_16U);
+	Mat thresh2;cv::multiply(max_dmat_tmp,1-thresh_mat,thresh2);
+	thresh2.convertTo(thresh2,CV_16U);
+	fgMask=((dmat!=0)&(dmat<thresh1))
+		+((dmat>max_dmat_old+10)&(dmat<(dmat_old+50)))
+		+((abs(dmat-max_dmat_old)<thresh2)&(max_dmat_mask_old!=0))
 		+((abs(dmat-dmat_old)<20)&fgMask_old!=0);
-	max_dmat_mask_new=max_dmat_mask_new+((dmat>max_dmat)&(dmat<(dmat_old+50)));
-	max_dmat=max(max_dmat,dmat);*/
+	max_dmat_mask_new=max_dmat_mask_new+((dmat>max_dmat_old+10)&(dmat<(dmat_old+50)));
+	max_dmat_new=max(max_dmat_old,dmat);
+	//cout<<"mat computation time: "<<clock()-t1<<endl;
+	//t1=clock();
 
 	max_dmat_mask_new=max_dmat_mask_old.clone();
-
+	/*
 	for (int i=0;i!=max_dmat_old.rows;++i)
 	{
 		for (int j=0;j!=max_dmat_old.cols;++j)
@@ -2170,8 +2219,11 @@ void segment::buildMaxDepth(const cv::Mat& dmat,const cv::Mat& dmat_old,const cv
 
 			//change
 			int mask_depth_max=max_dmat_mask_new.at<uchar>(i,j);
-
-			if (depth_current!=0&&depth_current<int(depth_max*0.97))
+			
+			//一个写死的根据最大深度计算百分比阈值的函数
+			double thresh_depth=0.0016*depth_max*depth_max*1.0/1000000-0.0016*depth_max*1.0/1000+0.02;
+			//double thresh_depth=0.05;
+			if (depth_current!=0&&depth_current<depth_max*(1-thresh_depth))
 				//if (depth_current!=0&&depth_current<depth_max-100)
 			{
 				//初始状态下总有背景被认为是前景
@@ -2182,7 +2234,7 @@ void segment::buildMaxDepth(const cv::Mat& dmat,const cv::Mat& dmat_old,const cv
 				//手滑动时无效区域会出现问题
 				//fgMask.at<uchar>(i,j)=255;
 			}
-			if (depth_current>depth_max&&depth_current-depth_old<50)
+			if (depth_current>depth_max+10&&depth_current-depth_old<50)
 			{
 				fgMask.at<uchar>(i,j)=255;
 
@@ -2193,7 +2245,7 @@ void segment::buildMaxDepth(const cv::Mat& dmat,const cv::Mat& dmat_old,const cv
 
 			//change
 			//if (abs(depth_current-depth_max)<depth_max*0.02&&mask_depth_max!=0)
-			if (abs(depth_current-depth_max)<50&&mask_depth_max!=0)
+			if (abs(depth_current-depth_max)<depth_max*thresh_depth&&mask_depth_max!=0)
 			{
 				fgMask.at<uchar>(i,j)=255;
 			}
@@ -2213,30 +2265,35 @@ void segment::buildMaxDepth(const cv::Mat& dmat,const cv::Mat& dmat_old,const cv
 
 		}
 	}
-
+	*/
 
 	//imshow("fgMask raw",fgMask);
+	Mat tmp=Mat::zeros(fgMask.rows,fgMask.cols,CV_8U);
+	tmp=largeContPassFilter(fgMask,CONT_AREA,20);
+#if 0
 	vector<vector<Point>> c;
 	Mat tmp1=fgMask.clone();
 	findContours(fgMask,c,CV_RETR_CCOMP,CV_CHAIN_APPROX_NONE);
-	Mat tmp=Mat::zeros(fgMask.rows,fgMask.cols,CV_8U);
 	for (int i=0;i<c.size();++i)
 	{
 		double area=contourArea(c[i]);
 		//double area=c[i].size();
-		if (area>2000)
+		if (area>20)
 		{
-			vector<vector<Point>> contour;
-			contour.push_back(c[i]);
-			drawContours(tmp,contour,-1,255,CV_FILLED);
+			drawContours(tmp,c,i,255,CV_FILLED);
 		}
 	}
-	tmp=tmp&tmp1;
+#endif
+	//cout<<"contour time: "<<clock()-t1<<endl;
+	//t1=clock();
+
+	//tmp=tmp&tmp1;
 	//imshow("fgMask",tmp);
 	fgMask_new=tmp.clone();
 
 	//change
 	//max_dmat_mask=max_dmat_mask_new&tmp;
+	
 	for (int i=0;i<tmp.rows;++i)
 	{
 		for (int j=0;j<tmp.cols;++j)
@@ -2248,6 +2305,7 @@ void segment::buildMaxDepth(const cv::Mat& dmat,const cv::Mat& dmat_old,const cv
 		}
 	}
 	max_dmat_mask_new=max_dmat_mask_new.clone();
+	//cout<<"max mat mask update time: "<<clock()-t1<<endl;
 	//imshow("max depth mask",max_dmat_mask_new);
 
 /*
@@ -2530,7 +2588,7 @@ Mat segment::binary_region_grow(const cv::Mat& fgMask,cv::Point p,int& number)
 	return res;
 }
 //实现利用真实的fgMask的反重置最大深度图
-void segment::reset_max_depth(const Mat& dmat,const Mat& fgMask,const Mat& max_dmat_old,Mat& max_dmat_new)
+void sgf::reset_max_depth(const Mat& dmat,const Mat& fgMask,const Mat& max_dmat_old,Mat& max_dmat_new)
 {
 	max_dmat_new=max_dmat_old.clone();
 	for (int i=0;i<dmat.rows;++i)
