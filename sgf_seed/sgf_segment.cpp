@@ -2062,115 +2062,6 @@ vector<Mat> segment::findfgMasksMovingHead(const cv::Mat& mog_fg,std::vector<cv:
 
 void sgf::buildMaxDepth(const cv::Mat& dmat,const cv::Mat& dmat_old,const cv::Mat& max_dmat_old,cv::Mat&max_dmat_new,const cv::Mat& fgMask_old,cv::Mat& fgMask_new,const cv::Mat& max_dmat_mask_old,cv::Mat& max_dmat_mask_new)
 {
-	/*
-	Mat fgMask=Mat::zeros(dmat.rows,dmat.cols,CV_8U);
-	//change
-	Mat max_dmat_mask_new;
-
-	if (max_dmat.data==NULL)
-	{
-		max_dmat_mask_new=Mat::zeros(dmat.rows,dmat.cols,CV_8U);
-		max_dmat=dmat.clone();
-		fgMask_old=fgMask.clone();
-
-		//change
-		max_dmat_mask=max_dmat_mask_new.clone();
-
-		return fgMask;
-	}
-	//更新max_dmat
-
-	//改成矩阵运算
-
-
-	//change
-	max_dmat_mask_new=max_dmat_mask.clone();
-
-	for (int i=0;i!=max_dmat.rows;++i)
-	{
-		for (int j=0;j!=max_dmat.cols;++j)
-		{
-			int depth_current=dmat.at<ushort>(i,j);
-			int depth_max=max_dmat.at<ushort>(i,j);
-			int depth_old=dmat_old.at<ushort>(i,j);
-			int old_mask_flag=fgMask_old.at<uchar>(i,j);
-
-			//change
-			int mask_depth_max=max_dmat_mask_new.at<uchar>(i,j);
-
-			if (depth_current!=0&&depth_current<int(depth_max*0.97))
-				//if (depth_current!=0&&depth_current<depth_max-100)
-			{
-				//初始状态下总有背景被认为是前景
-				fgMask.at<uchar>(i,j)=255;
-			}
-			if (depth_current!=0&&depth_old==0)
-			{
-				//手滑动时无效区域会出现问题
-				//fgMask.at<uchar>(i,j)=255;
-			}
-			if (depth_current>depth_max&&depth_current-depth_old<50)
-			{
-				fgMask.at<uchar>(i,j)=255;
-
-				//change
-				max_dmat_mask_new.at<uchar>(i,j)=255;
-
-			}
-
-			//change
-			if (abs(depth_current-depth_max)<30&&mask_depth_max!=0)
-			{
-				fgMask.at<uchar>(i,j)=255;
-			}
-
-			if (abs(depth_old-depth_current)<20&&old_mask_flag!=0)
-			{
-				fgMask.at<uchar>(i,j)=255;
-			}
-			max_dmat.at<ushort>(i,j)=max(depth_current,depth_max);
-
-			//change
-			// 			int fgmask_new=fgMask.at<uchar>(i,j);
-			// 			if (fgmask_new==0)
-			// 			{
-			// 				max_dmat_mask_new.at<uchar>(i,j)=0;
-			// 			}
-
-		}
-	}
-	imshow("fgMask raw",fgMask);
-	int erode_size=1;
-	Mat element1 = getStructuringElement( MORPH_RECT,
-		Size( 2*erode_size + 1, 2*erode_size+1 ),
-		Point( erode_size, erode_size ) );
-	//erode( fgMask,fgMask,element1);
-	//fgMask=connectedAreaFilter(fgMask);
-	vector<vector<Point>> c;
-	Mat tmp1=fgMask.clone();
-	findContours(fgMask,c,CV_RETR_CCOMP,CV_CHAIN_APPROX_NONE);
-	Mat tmp=Mat::zeros(fgMask.rows,fgMask.cols,CV_8U);
-	for (int i=0;i<c.size();++i)
-	{
-		double area=contourArea(c[i]);
-		if (area>1000)
-		{
-			vector<vector<Point>> contour;
-			contour.push_back(c[i]);
-			drawContours(tmp,contour,-1,255,CV_FILLED);
-		}
-	}
-	tmp=tmp&tmp1;
-	imshow("fgMask",tmp);
-	fgMask_old=tmp.clone();
-
-	//change
-	max_dmat_mask=max_dmat_mask_new&tmp;
-	imshow("max depth mask",max_dmat_mask);
-
-	return tmp;
-	*/
-
 	//int t1=clock();
 	Mat fgMask=Mat::zeros(dmat.rows,dmat.cols,CV_8U);
 	//change
@@ -2191,25 +2082,27 @@ void sgf::buildMaxDepth(const cv::Mat& dmat,const cv::Mat& dmat_old,const cv::Ma
 
 
 	//改成矩阵运算
+	max_dmat_mask_new=max_dmat_mask_old.clone();
 	Mat max_dmat_tmp=max_dmat_old.clone();
 	max_dmat_tmp.convertTo(max_dmat_tmp,CV_32F);
 	Mat max_dmat_multiply;
 	cv::multiply(max_dmat_tmp,max_dmat_tmp,max_dmat_multiply);
-	Mat thresh_mat=1-0.0016*max_dmat_multiply/1e6+0.0016*max_dmat_tmp/1e3-0.02;
+	Mat thresh_mat=1-0.0016*max_dmat_multiply/1e6+0.0016*max_dmat_tmp/1e3-0.02; //一个拟合的二次函数，来实现对不同深度的不同非线性阈值
 	Mat thresh1;cv::multiply(max_dmat_tmp,thresh_mat,thresh1);
 	thresh1.convertTo(thresh1,CV_16U);
 	Mat thresh2;cv::multiply(max_dmat_tmp,1-thresh_mat,thresh2);
 	thresh2.convertTo(thresh2,CV_16U);
-	fgMask=((dmat!=0)&(dmat<thresh1))
-		+((dmat>max_dmat_old+10)&(dmat<(dmat_old+50)))
-		+((abs(dmat-max_dmat_old)<thresh2)&(max_dmat_mask_old!=0))
-		+((abs(dmat-dmat_old)<20)&fgMask_old!=0);
-	max_dmat_mask_new=max_dmat_mask_new+((dmat>max_dmat_old+10)&(dmat<(dmat_old+50)));
+	fgMask=((dmat!=0)&(dmat<thresh1))  //当前深度小于最大深度一定比例，则是前景
+		+((dmat>max_dmat_old+10)&(dmat<(dmat_old+50)))  //当前深度大于最大深度，且与上一帧变化不大，则是前景（人是最大深度并且在后退的情形）
+		+((abs(dmat-max_dmat_old)<thresh2)&(max_dmat_mask_old!=0))   //当前深度与最大深度接近，并且最大深度对应的是前景，则是前景（人后退之后不动的情形）
+		+((abs(dmat-dmat_old)<20)&fgMask_old!=0);  //当前深度与上一帧深度变化不大，并且上一帧是前景，则是前景（人没有移动的情形）
+	max_dmat_mask_new=max_dmat_mask_new+((dmat>max_dmat_old+10)&(dmat<(dmat_old+50)));  //最大深度mask的更新，深度大于最大深度，并且与上一帧深度变化不大（人的位置是最大深度，并且一直后退的情形）
 	max_dmat_new=max(max_dmat_old,dmat);
 	//cout<<"mat computation time: "<<clock()-t1<<endl;
 	//t1=clock();
 
-	max_dmat_mask_new=max_dmat_mask_old.clone();
+
+	//下边是逐像素的计算（已改成上边的矩阵运算）
 	/*
 	for (int i=0;i!=max_dmat_old.rows;++i)
 	{
@@ -2268,11 +2161,11 @@ void sgf::buildMaxDepth(const cv::Mat& dmat,const cv::Mat& dmat_old,const cv::Ma
 
 		}
 	}
-	*/
 
-	//imshow("fgMask raw",fgMask);
+	//imshow("fgMask raw",fgMask); 
+	*/
 	Mat tmp=Mat::zeros(fgMask.rows,fgMask.cols,CV_8U);
-	tmp=largeContPassFilter(fgMask,CONT_AREA,1000);
+	tmp=largeContPassFilter(fgMask,CONT_AREA,1000);  //过滤掉噪声引起的检测为前景的错误部分（通过面积大小）
 #if 0
 	vector<vector<Point>> c;
 	Mat tmp1=fgMask.clone();
@@ -2286,21 +2179,21 @@ void sgf::buildMaxDepth(const cv::Mat& dmat,const cv::Mat& dmat_old,const cv::Ma
 			drawContours(tmp,c,i,255,CV_FILLED);
 		}
 	}
+	//tmp=tmp&tmp1;
 #endif
+	//imshow("fgMask",tmp);
 	//cout<<"contour time: "<<clock()-t1<<endl;
 	//t1=clock();
 
-	//tmp=tmp&tmp1;
-	imshow("fgMask",tmp);
-	Mat max_dmat_show;
-	max_dmat_new.convertTo(max_dmat_show,CV_8U,255.0/9000,0);
-	imshow("max depth",max_dmat_show);
+	//Mat max_dmat_show;
+	//max_dmat_new.convertTo(max_dmat_show,CV_8U,255.0/9000,0);
+	//imshow("max depth",max_dmat_show);
 	fgMask_new=tmp.clone();
 
 	//change
 	//max_dmat_mask=max_dmat_mask_new&tmp;
 	
-	for (int i=0;i<tmp.rows;++i)
+	for (int i=0;i<tmp.rows;++i)  //最大深度mask更新完之后，去掉不在前景中的部分
 	{
 		for (int j=0;j<tmp.cols;++j)
 		{
@@ -2310,9 +2203,9 @@ void sgf::buildMaxDepth(const cv::Mat& dmat,const cv::Mat& dmat_old,const cv::Ma
 			}
 		}
 	}
-	max_dmat_mask_new=max_dmat_mask_new.clone();
+	//max_dmat_mask_new=max_dmat_mask_new.clone();
 	//cout<<"max mat mask update time: "<<clock()-t1<<endl;
-	imshow("max depth mask",max_dmat_mask_new);
+	//imshow("max depth mask",max_dmat_mask_new);
 	}
 
 /*
