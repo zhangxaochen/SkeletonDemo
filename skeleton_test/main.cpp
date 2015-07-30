@@ -10,7 +10,7 @@
 using namespace std;
 using namespace cv;
 
-#define ZC_DEBUG_LV1 1	//显示关键结果图
+#define ZC_DEBUG_LV1 01	//显示关键结果图
 #define ZC_DEBUG_LV2 0	//显示某些中间结果图
 #define ZC_WRITE 0
 #define ZC_CLEAN 01
@@ -167,10 +167,11 @@ void main(int argc, char **argv){
 	//oniFname = "E:/oni_data/oni132x64/zc-stand-wo-feet-qvga.oni";
 // 	oniFname = "E:/oni_data/oni132_orig/zc_indoor_stand.oni";
 	oniFname = "E:/oni_data/oni132_orig/zc_indoor_touch_panel.oni"; //人手触摸大平面板
-
+	oniFname = "E:/oni_data/oni132_orig/indoor-driver-noise.oni";	//对比测试 MS/primesense 驱动
+	//oniFname = ""; //不行
 
 	xn::Player plyr;
-	rc = ctx.OpenFileRecording(oniFname, plyr);
+	//rc = ctx.OpenFileRecording(oniFname, plyr);
 	int frameOffset = std::stoi(argv[1]);
 	plyr.SeekToFrame("Depth1", frameOffset, XN_PLAYER_SEEK_SET);
 	plyr.SetRepeat(string(argv[2])=="true"); //放在 OpenFileRecording 之后才有效
@@ -745,7 +746,7 @@ void main(int argc, char **argv){
 		// 	segment my_seg;
 		// 	my_seg.read_config(sgfConfigFn);
 		// 	my_seg.set_headTemplate2D(sgfTempl);
-		zc::loadSeedHeadConf(sgfConfigFn, sgfTempl);
+		sgf::loadSeedHeadConf(sgfConfigFn, sgfTempl);
 
 		clock_t begt = clock();
 
@@ -754,8 +755,11 @@ void main(int argc, char **argv){
 		cout << "getFgMaskVec.ts: " << clock() - begt << endl;
 #endif //CAPG_SKEL_VERSION_0_9, 0_9_5
 
+		begt = clock();
 		static vector<HumanObj> humVec;
 		zc::getHumanObjVec(dmat, fgMskVec, humVec);
+		cout << "getHumanObjVec.ts: " << clock() - begt << endl;
+
 		if (humVec.size())
 			int dummy = 0;
 		Mat humMsk彩色 = zc::getHumansMask(dmat, humVec);

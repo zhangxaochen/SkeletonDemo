@@ -2292,8 +2292,13 @@ namespace zc{
 #elif 1	//v2, 改成先做预处理，大面积区域才算确定区域，孤立小区域不算：
 		//也错，面积判定不鲁棒！一人(m1)手臂把另一人(m2)分成两块，且m2其中一部分非常小时，因为小区域扔回【争议区域】，重新判定时，由于 dist-map 仅2D运算，导致实际m2的区域被错误划分到m1上
 		Mat prevFgMaskWhole = Mat::zeros(dmat.size(), CV_8UC1);
+
+		//对前一帧每个mask，存大面积区域：
+		vector<Mat> prevFgMskLargeAreaVec;
 		for (size_t i = 0; i < prevFgMaskVecSz; i++){
 			Mat largeArea = largeContPassFilter(prevFgMaskVec[i], CONT_AREA, 1200);
+			prevFgMskLargeAreaVec.push_back(largeArea);
+
 			prevFgMaskWhole.setTo(UCHAR_MAX, largeArea);
 		}
 #endif	//【确定区域】判定规则
@@ -2301,13 +2306,17 @@ namespace zc{
 		//当前帧比前一帧新增潜在区域(争议区域)：没用到？调试观察用！ 2015年7月29日13:03:46
 		Mat currUnsureMask = currPotentialMask - prevFgMaskWhole;
 
-		int distType = DIST_L2,
-			maskSize = DIST_MASK_PRECISE;
+		int distType = CV_DIST_L2,
+			maskSize = CV_DIST_MASK_PRECISE;
 		
 		//对 prev-vec逐一求 dist-map:
 		vector<Mat> dtransVec;
 		for (size_t i = 0; i < prevFgMaskVecSz; i++){
+			//×
 			Mat prevFg_i = prevFgMaskVec[i];
+			//改成用大面积vec：
+			//Mat prevFg_i = prevFgMskLargeAreaVec[i];
+
 			//确定区域：
 			Mat prevFg_i_sure = prevFg_i & currPotentialMask;
 			Mat  dtrans_i;
@@ -2531,7 +2540,7 @@ namespace zc{
 			Mat maskedDmat = dmat.clone();
 			maskedDmat.setTo(0, mskXY_i == 0);
 			//与之前的rgThresh保持一致：
-			int rgThresh = 55;
+			int rgThresh = 155;
 			double ratio = 1. / rgThresh;
 			Mat tdview = dmat2tdview_core(maskedDmat, ratio);
 			tdview.convertTo(tdview, CV_8U);
@@ -3084,21 +3093,57 @@ namespace zc{
 		Mat res;
 		//8uc3 (or c4?), 彩色：
 		Mat dmat8u;
-		//不要一致灰度化，改为对比度最大化，
+		//一致灰度化:
 		//dmat.convertTo(dmat8u, CV_8U, 1.*UCHAR_MAX / MAX_VALID_DEPTH);
-		normalize(dmat, dmat8u, 0, UCHAR_MAX, NORM_MINMAX, CV_8UC1);
+		//改用反色， 近处高亮:
+		dmat.convertTo(dmat8u, CV_8U, -1.*UCHAR_MAX / MAX_VALID_DEPTH, UCHAR_MAX);	
+		dmat8u.setTo(0, dmat == 0);
+		
+		//改为对比度最大化(允许看起来亮度闪烁):
+		//normalize(dmat, dmat8u, 0, UCHAR_MAX, NORM_MINMAX, CV_8UC1);
 
-		cvtColor(dmat8u, res, CV_GRAY2BGRA);
+		//cvtColor(dmat8u, res, CV_GRAY2BGRA);	//不要透明A
+		cvtColor(dmat8u, res, CV_GRAY2BGR);
 
 		size_t humSz = humVec.size();
 		for (size_t i = 0; i < humSz; i++){
-			HumanObj hum = humVec[i];
-			Mat humMask = hum.getCurrMask();
-			Scalar c = hum.getColor();
-			//res.setTo(c, humMask); //实心难发现完全遮挡错误，改画轮廓
+			HumanObj hum_i = humVec[i];
+			Mat humMask_i = hum_i.getCurrMask();
+			Scalar c = hum_i.getColor();
+#if 01		//v1, 画实心。但因难发现完全遮挡错误，改画轮廓
+			res.setTo(0, humMask_i);	//先挖空
+			
+			//要+=的彩色mask
+			Mat fgAreaColorMat = Mat::zeros(dmat.size(), CV_8UC3);
+			
+			fgAreaColorMat.setTo(c, humMask_i);
+#if 0		//BGR->Lab, 对比度最大化normalize前景区域【L】
+			cvtColor(fgAreaColorMat, fgAreaColorMat, COLOR_BGR2Lab);
+			vector<Mat> cn3;
+			cv::split(fgAreaColorMat, cn3);
+			cn3[0] = dmat8u.clone();
+			normalize(cn3[0], cn3[0], 0, UCHAR_MAX, NORM_MINMAX, -1, humMask_i);
+
+			cv::merge(cn3, fgAreaColorMat);
+			cvtColor(fgAreaColorMat, fgAreaColorMat, COLOR_Lab2BGR);
+#elif 1		//BGR->HSV, 按灰度重置【V】, 再转回BGR:
+			cvtColor(fgAreaColorMat, fgAreaColorMat, COLOR_BGR2HSV);
+			vector<Mat> cn3;
+			cv::split(fgAreaColorMat, cn3);
+			Mat cn_v = dmat8u.clone();
+			cn_v.setTo(0, humMask_i == 0);
+			cn3[2] = cn_v;
+			cn3[1].setTo(255);//【S】饱和度最大华
+
+			cv::merge(cn3, fgAreaColorMat);
+			cvtColor(fgAreaColorMat, fgAreaColorMat, COLOR_HSV2BGR);
+#endif
+
+			res += fgAreaColorMat;
+#elif 1		//v2, 画轮廓
 			vector<vector<Point>> contours;
 			//findContours(humMask.clone(), contours, RETR_EXTERNAL, CHAIN_APPROX_NONE);
-			findContours(humMask.clone(), contours, RETR_TREE, CHAIN_APPROX_NONE);
+			findContours(humMask_i.clone(), contours, RETR_TREE, CHAIN_APPROX_NONE);
 
 			//可能一个mask 有多段cont(e.g., 遮挡情境)，要画成一个色：
 			drawContours(res, contours, -1, c, 2);
@@ -3130,6 +3175,7 @@ namespace zc{
 			}
 #endif
 			circle(res, mc, 5, c, 2);
+#endif		//画轮廓
 
 		}
 
@@ -3394,7 +3440,7 @@ namespace zc{
 
 		if (fid <= oldFid){
 #ifdef CV_VERSION_EPOCH //if opencv2.x
-			pMog2 = new BackgroundSubtractorMOG2(history, varThresh, detectShadows);
+			pBgSub = new BackgroundSubtractorMOG2(history, varThresh, detectShadows);
 #elif CV_VERSION_MAJOR >= 3 //if opencv3
 #if USE_MOG2	//---------------MOG2
 			clock_t begt = clock();
@@ -3415,7 +3461,7 @@ namespace zc{
 
 #ifdef CV_VERSION_EPOCH //if opencv2.x
 		//(*pMog2)(dmat8u, fgMskMotion);
-		(*pBgSub)(dmat8u, fgMskMotion);
+		(*pBgSub)(dmat8u, fgMskMotion, learnRate);
 #elif CV_VERSION_MAJOR >= 3 //if opencv3
 		//MOG, KNN 通用：
 		pBgSub->apply(dmat8u, fgMskMotion, learnRate);
@@ -3451,11 +3497,12 @@ namespace zc{
 		Mat tmp;
 		// 		fgMskVec = zc::findFgMasksUseBbox(maskedDmat, debugDraw, tmp);
 
-		int rgThresh = 55;
 #if 0 //XY-XZ-bbox 联合判定
+		int rgThresh = 55;
 		vector<vector<Point>> sdBboxVov = zc::seedUseBboxXyXz(maskedDmat, debugDraw, tmp);
 		fgMskVec = zc::simpleRegionGrow(maskedDmat, sdBboxVov, rgThresh, flrApartMask, false);
 #elif 0 //头身联合判定
+		int rgThresh = 55;
 		vector<vector<Point>> sdHeadBodyVov = zc::seedUseHeadAndBodyCont(dmat, debugDraw, tmp);
 		fgMskVec = zc::simpleRegionGrow(maskedDmat, sdHeadBodyVov, rgThresh, flrApartMask, false);
 #elif 01 //MOG2 运动检测方法， 去起始帧、大腐蚀，防噪声。
@@ -3465,10 +3512,13 @@ namespace zc{
 		Mat sdMoveMat = fgMskMotion.clone();
 		int erodeRadius = 13;
 		erode(sdMoveMat, sdMoveMat, zc::getMorphKrnl(erodeRadius));
+		if (debugDraw){
+			imshow("sdMoveMat", sdMoveMat);
+		}
 
 		isFirstTime = false; //放这里对吗？哪里还需要？
 
-		rgThresh = 55;
+		int rgThresh = 155;
 		bool getMultiMasks = true;
 		//fgMskVec = zc::simpleRegionGrow(maskedDmat, sdMoveMat, rgThresh, flrApartMask, getMultiMasks);
 		fgMskVec = zc::simpleRegionGrow(dmat, sdMoveMat, rgThresh, fgMskMotion, getMultiMasks);
@@ -3580,18 +3630,21 @@ namespace zc{
 		}
 #endif	//D.后处理
 
-#if !SOLUTION_1	//增长结果 反馈到 potMsk
-		//if (resVec.size() > 0){
-		sgf::setPotentialMask(dmat, maskVec2mask(dmat.size(), fgMskVec));
-		Mat potMskAfter = sgf::getPotentialMask();
-		if (debugDraw){
-			imshow("potMskAfter", potMskAfter);
-			imshow("sgf::_fgMask", sgf::_fgMask);
-			imshow("sgf::_max_dmat", sgf::_max_dmat);
-			imshow("sgf::_max_dmat_mask", sgf::_max_dmat_mask);
+#if 10 && !SOLUTION_1	//若方案二, 增长结果反馈到 potMsk, (注意是!SOLUTION_1)
+		if (fgMskVec.size() > 0){
+			sgf::setPotentialMask(dmat, maskVec2mask(dmat.size(), fgMskVec));
+			Mat potMskAfter = sgf::getPotentialMask();
+			if (debugDraw){
+				imshow("potMskAfter", potMskAfter);
+				imshow("sgf::_fgMask", sgf::_fgMask);
+				imshow("sgf::_max_dmat", sgf::_max_dmat);
+				Mat maxDmat8u;
+				sgf::_max_dmat.convertTo(maxDmat8u, CV_8UC1, 1.*UCHAR_MAX / MAX_VALID_DEPTH);
+				imshow("maxDmat8u", maxDmat8u);
 
+				imshow("sgf::_max_dmat_mask", sgf::_max_dmat_mask);
+			}
 		}
-		//}
 #endif
 
 
@@ -3624,16 +3677,16 @@ namespace zc{
 		Mat humMsk = zc::getHumansMask(fgMskVec, dmat.size());
 		// 			QtFont font = fontQt("Times");
 		// 			cv::addText(humMsk, "some-text", { 55, 55 ), font);
-		putText(humMsk, "fid: " + to_string(fid), Point(0, 30), FONT_HERSHEY_PLAIN, 1, 255);
+		putText(humMsk, "fid: " + to_string((long long)fid), Point(0, 30), FONT_HERSHEY_PLAIN, 1, 255);
 		imshow("humMsk", humMsk);
 		if (debugWrite)
 			imwrite("humMsk_" + std::to_string((long long)fid) + ".jpg", humMsk);
 
 		Mat humMsk彩色 = zc::getHumansMask(dmat, humVec);
-		putText(humMsk彩色, "fid: " + to_string(fid), Point(0, 30),
+		putText(humMsk彩色, "fid: " + to_string((long long)fid), Point(0, 30),
 			FONT_HERSHEY_PLAIN, 1, Scalar(255, 255, 255));
 
-		putText(humMsk彩色, "humVec.size: " + to_string(humVec.size()), Point(0, 50),
+		putText(humMsk彩色, "humVec.size: " + to_string((long long)humVec.size()), Point(0, 50),
 			FONT_HERSHEY_PLAIN, 1, Scalar(255, 255, 255));
 
 		imshow("humMsk-color", humMsk彩色);
@@ -3798,7 +3851,8 @@ namespace zc{
 			setPrevMask(_currMask);
 		}
 
-		RNG rng(clock());
+		uint64 seed = (clock() % (1 << 16)) << 16;
+		RNG rng(seed);
 		for (int i = 0; i < 3; i++)
 			_humColor[i] = rng.uniform(UCHAR_MAX/2, UCHAR_MAX);
 		//_humColor[3] = 100; //半透明
@@ -4677,13 +4731,19 @@ namespace sgf{
 	}//resetPotentialMask
 
 	void setPotentialMask(const Mat &dmat, Mat newFgMask){
+#if 01
 		//上面不管用, 尝试同时重置 max-dmat-fg-flag:
 		_max_dmat_mask.setTo(0, (newFgMask == 0 & dmat != 0));
 
 		//上面还不管用, 尝试 _max_dmat 非fg置零, 下一帧自动更新
 		Mat region2reset = _fgMask - newFgMask;
+
+		//仅重置大面积区域, e.g. 离开人的椅背, 较大但又不够人体那么大
+		region2reset = zc::largeContPassFilter(region2reset, zc::CONT_AREA, 20 * 40);
+
 		_max_dmat.setTo(0, region2reset);
 		cv::add(_max_dmat, dmat, _max_dmat, region2reset);
+#endif	
 
 		//放在最后
 		_fgMask = newFgMask.clone();
