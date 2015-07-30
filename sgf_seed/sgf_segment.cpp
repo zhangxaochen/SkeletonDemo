@@ -2184,6 +2184,9 @@ void sgf::buildMaxDepth(const cv::Mat& dmat,const cv::Mat& dmat_old,const cv::Ma
 		max_dmat_mask_new=Mat::zeros(dmat.rows,dmat.cols,CV_8U);
 
 	}
+	else
+	{
+		
 	//¸üÐÂmax_dmat
 
 
@@ -2269,7 +2272,7 @@ void sgf::buildMaxDepth(const cv::Mat& dmat,const cv::Mat& dmat_old,const cv::Ma
 
 	//imshow("fgMask raw",fgMask);
 	Mat tmp=Mat::zeros(fgMask.rows,fgMask.cols,CV_8U);
-	tmp=largeContPassFilter(fgMask,CONT_AREA,20);
+	tmp=largeContPassFilter(fgMask,CONT_AREA,1000);
 #if 0
 	vector<vector<Point>> c;
 	Mat tmp1=fgMask.clone();
@@ -2288,7 +2291,10 @@ void sgf::buildMaxDepth(const cv::Mat& dmat,const cv::Mat& dmat_old,const cv::Ma
 	//t1=clock();
 
 	//tmp=tmp&tmp1;
-	//imshow("fgMask",tmp);
+	imshow("fgMask",tmp);
+	Mat max_dmat_show;
+	max_dmat_new.convertTo(max_dmat_show,CV_8U,255.0/9000,0);
+	imshow("max depth",max_dmat_show);
 	fgMask_new=tmp.clone();
 
 	//change
@@ -2306,7 +2312,8 @@ void sgf::buildMaxDepth(const cv::Mat& dmat,const cv::Mat& dmat_old,const cv::Ma
 	}
 	max_dmat_mask_new=max_dmat_mask_new.clone();
 	//cout<<"max mat mask update time: "<<clock()-t1<<endl;
-	//imshow("max depth mask",max_dmat_mask_new);
+	imshow("max depth mask",max_dmat_mask_new);
+	}
 
 /*
 	//change
