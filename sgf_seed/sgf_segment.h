@@ -18,10 +18,10 @@ namespace sgf
 	//根据当前深度图更新最大深度图，并且返回前景mask
 	//参数共有八个 dmat 当前深度图，dmat_old 上一帧深度图，max_dmat_old 上一帧最大深度图，max_dmat_new 当前最大深度图（输出）
 	//             fgMask_old 上一帧的前景，fgMask_new 当前帧前景（输出），max_dmat_mask_old，上一帧最大深度mask，max_dmat_mask_new，当前最大深度mask（输出）
-	void initialize_scene(const cv::Mat& dmat,cv::Mat& max_dmat,cv::Mat& max_dmat_mask,cv::Mat& fgMask,int allowed_max_depth=3000);
+	void initialize_scene(const cv::Mat& dmat,cv::Mat& max_dmat,cv::Mat& max_dmat_mask,cv::Mat& fgMask);
 	void buildMaxDepth(const cv::Mat& dmat,const cv::Mat& dmat_old,const cv::Mat& max_dmat_old,cv::Mat&max_dmat_new,const cv::Mat& fgMask_old,cv::Mat& fgMask_new,const cv::Mat& max_dmat_mask_old,cv::Mat& max_dmat_mask_new);
 	//cv::Mat buildMaxDepth(const cv::Mat& dmat,cv::Mat& max_dmat,const cv::Mat& dmat_old,cv::Mat& fgMask_old);
-	void reset_scene(const cv::Mat& dmat,cv::Mat& max_dmat,cv::Mat& max_dmat_mask,cv::Mat& fgMask,int allowed_max_depth=3000);
+	void reset_scene(const cv::Mat& dmat,cv::Mat& max_dmat,cv::Mat& max_dmat_mask,cv::Mat& fgMask);
 	void reset_max_depth(const cv::Mat& dmat,const cv::Mat& fgMask,const cv::Mat& max_dmat_old,cv::Mat& max_dmat_new);
 
 	class segment

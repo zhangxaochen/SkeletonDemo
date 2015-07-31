@@ -2059,23 +2059,25 @@ vector<Mat> segment::findfgMasksMovingHead(const cv::Mat& mog_fg,std::vector<cv:
 	}
 	return res;
 }
-void sgf::initialize_scene(const cv::Mat& dmat,cv::Mat& max_dmat,cv::Mat& max_dmat_mask,cv::Mat& fgMask,int allowed_max_depth/*=3000*/)
+void sgf::initialize_scene(const cv::Mat& dmat,cv::Mat& max_dmat,cv::Mat& max_dmat_mask,cv::Mat& fgMask)
 {
+	cout<<"Initialize the scene."<<endl;
 	max_dmat=dmat.clone();
-	max_dmat.setTo(allowed_max_depth,max_dmat==0);
+	//max_dmat.setTo(allowed_max_depth,max_dmat==0); //无效区域用一个最大深度填充，暂时不用（有太多漏洞）
 	fgMask=Mat::zeros(dmat.rows,dmat.cols,CV_8U);
 	max_dmat_mask=Mat::zeros(dmat.rows,dmat.cols,CV_8U);
 }
-void sgf::reset_scene(const cv::Mat& dmat,cv::Mat& max_dmat,cv::Mat& max_dmat_mask,cv::Mat& fgMask,int allowed_max_depth/*=3000*/)
+void sgf::reset_scene(const cv::Mat& dmat,cv::Mat& max_dmat,cv::Mat& max_dmat_mask,cv::Mat& fgMask)
 {
-	initialize_scene(dmat,max_dmat,max_dmat_mask,fgMask,allowed_max_depth);
+	cout<<"Reset the scene."<<endl;
+	initialize_scene(dmat,max_dmat,max_dmat_mask,fgMask);
 }
 void sgf::buildMaxDepth(const Mat& dmat,const Mat& dmat_old,const Mat& max_dmat_old,Mat&max_dmat_new,const Mat& fgMask_old,Mat& fgMask_new,const Mat& max_dmat_mask_old,Mat& max_dmat_mask_new)
 {
 	//int t1=clock();
 	if (max_dmat_old.data==NULL)
 	{
-		cout<<"ERROR: please initialize/reset the scene first!!!"<<endl;
+		initialize_scene(dmat,max_dmat_new,max_dmat_mask_new,fgMask_new);
 	}
 	else
 	{
