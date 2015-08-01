@@ -170,7 +170,7 @@ namespace zc{
 
 	Mat fetchFloorApartMask(Mat dmat, bool debugDraw = false);
 
-	//计算物理尺度宽度X-mat
+	//@brief 计算物理尺度宽度X-mat, cv32s
 	//centerX： 中心点x坐标，默认值0，即mat左边缘
 	Mat calcWidthMap(Mat dmat, int centerX = 0, bool debugDraw = false);
 	Mat fetchWidthMap(Mat dmat, int centerX = 0, bool debugDraw = false);
@@ -182,7 +182,7 @@ namespace zc{
 	//与 calcHeightMap 区别在于： 不是每次算， 只有 dmat 内容变了，才更新
 	Mat fetchHeightMap0(Mat dmat, bool debugDraw = false);
 
-	//计算物理尺度高度Mat：
+	//计算物理尺度高度Mat：cv32s
 	//之前的实现错误，改为中轴线为0高度，最后统一偏移 +hmin
 	Mat calcHeightMap1(Mat dmat, bool debugDraw = false);
 
@@ -261,19 +261,25 @@ namespace zc{
 
 	//@brief 目前整合了 seedNoMove, calcPotentialMask, getRgMaskVec, simpleRegionGrow, mergeFgMaskVec
 	//@param prevFgMaskVec: 前一帧的最终 fgMaskVec
-	//@param currFgMskVec: 当前帧步骤(B)找到的初始前景(可能是新人,可能不)
+	//@param currInitFgMskVec: 当前帧步骤(B)找到的初始前景(可能是新人,可能不)
 	//@param 新的 fgMaskVec
 	//@param moveMaskMat, 运动前景蒙板，目前用 MOG2
-	vector<Mat> trackingNoMove(Mat dmat, const vector<Mat> &prevFgMaskVec, const vector<Mat> &currFgMskVec, int noMoveThresh = 55, Mat moveMaskMat = Mat(), bool debugDraw = false);
+	vector<Mat> trackingNoMove(Mat dmat, const vector<Mat> &prevFgMaskVec, const vector<Mat> &currInitFgMskVec, int noMoveThresh = 55, Mat moveMaskMat = Mat(), bool debugDraw = false);
 
 	//@brief 从trackingNoMove抽取而来
 	Mat calcPotentialMask(const Mat &dmat, const Mat moveMaskMat, const vector<Mat> &prevFgMaskVec, int noMoveThresh, bool debugDraw = false);
 
-	//@brief 重构trackingNoMove, 得到限制增长mask-vec
+	//@deprecated, 因为发现【争议区域】判定仅凭 dist-map XY 判定，会丢失正确区域，导致挥手抹掉真实前景。见 image-seq-reset-big-area-error.yaml
+	//@brief 重构trackingNoMove, 得到限制增长mask-vec	//用于tracking 增长之前，每个种子点集都限制增长范围，主要用了 dist-map XY距离判定
 	//对于多人重叠，且同时运动的情形，用 dist-map, 对motion做分割
 	//@param prevFgMaskVec: 上一帧检测到的人体mask-vec
 	//@param moveMask: 运动检测(MOG, etc.)得到的整个前景 mask
 	vector<Mat> getRgMaskVec(const Mat &dmat, const vector<Mat> &prevFgMaskVec, Mat currPotentialMask, bool debugDraw = false, OutputArray _debug_mat = noArray());
+
+	//@brief 与 getRgMaskVec 相比, 增加参数 currFgMaskVec, 使用增长结果求交判定争议区域, currPotentialMask 这里用不到
+	//@return 返回值就是【真实前景】mask-vec, 而不是"允许增长mask"
+	//@param currFgMaskVec 预先直接用全部validMsk增长得到的mask-vec, 可能有重叠, e.g., 每个mask_i 包含相同的两个人。各个mask交集算作【争议区域】
+	vector<Mat> getRealFgMaskVec(const Mat &dmat, const vector<Mat> &prevFgMaskVec, const vector<Mat> &currFgMaskVec, bool debugDraw = false, OutputArray _debug_mat = noArray());
 
 	//@deprecated 仍用 trackingNoMove, 目前其整合了 seedNoMove, calcPotentialMask, getRgMaskVec, simpleRegionGrow, mergeFgMaskVec
 	//@brief 重构trackingNoMove, 只用方案二, 且将前后getRgMaskVec, merge部分解耦(mergeFgMaskVec)
@@ -284,14 +290,17 @@ namespace zc{
 	//@brief 从trackingNoMove中抽离。将newVec根据是否重叠, 合并到baseVec上去
 	vector<Mat> mergeFgMaskVec(const vector<Mat> &baseVec, const vector<Mat> &newVec, bool debugDraw = false);
 
-	//若某mask中包含多个孤立连通区域，则将其打散为多个mask
+	//@brief 若某mask中包含多个孤立连通区域，则将其打散为多个mask
 	//e.g., 两人拉手时tracking成为一个mask，【XY视图】分离时mask也应打散；
 	//人靠近（握持）某物体时，增长为一个mask，分离时，应打散，并根据bbox etc. 判定是否跟踪“某物”
+	//只解决【XY视图】分离情况，对【XZ视图】分离不处理，所以不好
 	vector<Mat> separateMasksXYview(Mat dmat, vector<Mat> &inMaskVec, bool debugDraw = false);
 
 	//类似separateMasksXYview，但变换视角为【XZ视图】
-	vector<Mat> separateMasksXZview(Mat dmat, vector<Mat> &inMaskVec, bool debugDraw = false);
+	vector<Mat> separateMasksXZview(Mat dmat, vector<Mat> &inMaskVec, int zSepThresh = 300, bool debugDraw = false);
 
+	//@brief 对 inMaskVec 每一个检查， 若存在 X轴上分离的区域(Y, Z不管), 分离; 若大小形状合适, 加入返回值, 否则, 舍弃
+	vector<Mat> separateMasksXXview(Mat dmat, vector<Mat> &inMaskVec, bool debugDraw = false);
 
 	//返回 contours[contIdx] 对应的top-down-view 上的 XZ-bbox
 	Rect contour2XZbbox(Mat dmat, vector<vector<Point>> &contours, int contIdx);
@@ -319,8 +328,10 @@ namespace zc{
 #endif
 
 	//在【前一帧】找到的前景mask范围内，前后帧深度值变化不大(diff < thresh)的像素点，作为新候选点。
-	//@return 新候选点mask
+	//@return 新候选点mask, 可能全黑
 	Mat seedNoMove(Mat dmat, Mat mask, int thresh = 50);
+
+	//@return 与 maskVec 相同长度的 mask-vec, 可能有全黑mask
 	vector<Mat> seedNoMove(Mat dmat, vector<Mat> maskVec, int thresh = 50);
 
 	//@Overload
@@ -457,8 +468,9 @@ namespace zc{
 
 	//@deprecated
 	//假定origMasks里没有全黑mat，否则出错！
-	vector<Mat> bboxFilter(Mat dmat, const vector<Mat> &origMasks);
+	vector<Mat> bboxBatchFilter(Mat dmat, const vector<Mat> &origMasks);
 
+	//@deprecated 语义不明
 	//假定 mask 不是全黑，否则出错！mask中连通区域不必唯一
 	//用到 mask 说明必然用到深度信息, e.g., dmax-dmin < thresh
 	bool fgMskIsHuman(Mat dmat, Mat mask);
@@ -468,9 +480,15 @@ namespace zc{
 	//@return 目前等价于bboxIsHuman
 	bool contIsHuman(Size matSize, vector<Point> cont);
 
-	//仅使用XY信息，无深度信息, 
+	//@brief 仅使用XY信息，无深度信息, 
 	//@return pxHeightEnough && narrowEnough && feetLowEnough;
 	bool bboxIsHuman(Size matSize, Rect bbox);
+
+	//@brief overloading, 第二参数由 Rect-bbox 改成 Mat-mask
+	bool bboxIsHuman(Size matSize, const Mat mask);
+
+	//@brief bboxIsHuman 基础上，增加物理尺度对 bbox 判定
+	bool bboxIsHumanWscale(const Mat &dmat, const Mat mask);
 
 	//radius: kernel size is (2*radius+1)^2
 	//shape: default MORPH_RECT
@@ -666,7 +684,7 @@ namespace sgf{
 	vector<Mat> separateMasksContValley(Mat dmat, vector<Mat> &inMaskVec, bool debugDraw = false);
 
 	extern Mat _max_dmat,	//最大深度图
-		_fgMask,	//最终调用者需要的数据
+		_potFgMask,	//最终调用者需要的数据
 		_max_dmat_mask;	//最大深度图对应的flag-mat
 
 
@@ -677,7 +695,11 @@ namespace sgf{
 	void resetPotentialMask();
 
 	//@brief 主循环得到真实前景mask-vec之后, "允许增长mask"置为 mask-vec-whole
-	void setPotentialMask(const Mat &dmat, Mat newFgMask);
+	//@param newFgMask 当前帧N个前景合并成一个， 与当前 _potFgMask 比对
+	void setPotentialMask(const Mat &dmat, Mat newFgMask, bool debugDraw = false);
+
+	//@brief overloading, 之前 region2reset = _potFgMask - newFgMask 逻辑有问题， 改用前后帧real-fgMask 比对
+	void setPotentialMask(const Mat &dmat, const Mat &currFgMskWhole, const Mat	&prevFgMskWhole, bool debugDraw = false);
 
 	//@brief 返回全局变量 _fgMask 值, 无计算, 注意与 calcPotentialMask 区别
 	Mat getPotentialMask();

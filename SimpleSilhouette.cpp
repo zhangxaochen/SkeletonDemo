@@ -16,6 +16,12 @@ const int mode = 01; //0当前， 1平均
 const int thickLimitDefault = 1500;
 int thickLimit = thickLimitDefault; //毫米
 
+const int gRgThresh = 155;
+const int gNoMoveThresh = 100;
+
+const int distType = CV_DIST_L2;
+const int maskSize = CV_DIST_MASK_PRECISE;
+
 //一些调试颜色：
 Scalar cwhite(255, 255, 255);
 Scalar cred(0, 0, 255);
@@ -1080,10 +1086,13 @@ namespace zc{
 
 
 	Mat calcWidthMap(Mat dmat, int centerX /*= 0*/, bool debugDraw /*= false*/){
-		Mat res = dmat.clone(); //保持 cv16uc1 应该没错；
+		//Mat res = dmat.clone(); //保持 cv16uc1 应该没错；错，有负数！
+		Mat res;
+		dmat.convertTo(res, CV_32S);
 
 		int ww = res.cols;
-		for (size_t j = 0; j < ww; j++){
+		//for (size_t j = 0; j < ww; j++){
+		for (int j = 0; j < ww; j++){//必须是 int, 非 uint, 
 			Mat col = res.col(j);
 			col = col * (j - centerX) / XTION_FOCAL_XY;
 		}
@@ -1120,7 +1129,7 @@ namespace zc{
 	}//calcHeightMapWrong
 
 	Mat calcHeightMap1(Mat dmat, bool debugDraw /*= false*/){
-		//Mat res = dmat.clone(); //保持 cv16uc1 应该没错；错！
+		//Mat res = dmat.clone(); //保持 cv16uc1 应该没错；错！因为有负数
 		Mat res;
 		dmat.convertTo(res, CV_32S);
 
@@ -2146,8 +2155,8 @@ namespace zc{
 		return resVec;
 	}//findFgMasksUseHeadAndBodyCont
 
-	//@note 2015年7月9日23:32:37， currFgMskVec部分应解耦和，命名 mergeFgMaskVec【未解决】
-	vector<Mat> trackingNoMove(Mat dmat, const vector<Mat> &prevFgMaskVec, const vector<Mat> &currFgMskVec, int noMoveThresh /*= 55*/, Mat moveMaskMat /*= Mat()*/, bool debugDraw /*= false*/){
+	//@note 2015年7月9日23:32:37， currInitFgMskVec部分应解耦和，命名 mergeFgMaskVec【未解决】
+	vector<Mat> trackingNoMove(Mat dmat, const vector<Mat> &prevFgMaskVec, const vector<Mat> &currInitFgMskVec, int noMoveThresh /*= 55*/, Mat moveMaskMat /*= Mat()*/, bool debugDraw /*= false*/){
 		//seedNoMove 仅此处调用 o(╯□╰)o
 		vector<Mat> sdsUsePreVec = seedNoMove(dmat, prevFgMaskVec, noMoveThresh); //√
 
@@ -2160,7 +2169,7 @@ namespace zc{
 #if SOLUTION_1
 		int rgThresh = 55;
 #else
-		int rgThresh = 155;
+		int rgThresh = gRgThresh;
 #endif
 
 #if 0	//我实现的 validMsk 方法
@@ -2182,6 +2191,7 @@ namespace zc{
 		if (debugDraw)
 			imshow("trackingNoMove.validMsk-final", validMsk);
 
+#if 0	//v1, 策略一：增长前，预先分离限制增长mask，存在问题：抹除真实前景，见 image-seq-reset-big-area-error.yaml。原因： 仅在validMsk上做分割，未考虑深度信息
 #if 0	//测试允许增长mask分离	2015年7月29日12:47:55	good！
 		{
 			clock_t begt;
@@ -2208,12 +2218,35 @@ namespace zc{
 		if (debugDraw){
 			Mat rgMskVec_show = getHumansMask(rgMskVec, dmat.size());
 			imshow("getRgMaskVec", rgMskVec_show);
-			if (!getRgMaskVec_dbg.empty())
+			//if (!getRgMaskVec_dbg.empty()) //应该不必？
 				imshow("getRgMaskVec_dbg", getRgMaskVec_dbg);
 		}
 
 		vector<Mat> noMoveFgMskVec = simpleRegionGrow(dmat, sdsUsePreVec, rgThresh, rgMskVec, debugDraw);
+#elif 1	//v2, 策略二：先增长，若mask A,B 有交集，必然完全重合，对他们求解【争议区域】，重新增长；若无交集，则fgMsk直接用
+		//先增长：
+		vector<Mat> noMoveFgMskVec = simpleRegionGrow(dmat, sdsUsePreVec, rgThresh, validMsk, debugDraw);
+		size_t noMoveFgMskVecSz = noMoveFgMskVec.size();
+		if (noMoveFgMskVecSz > 1)
+			int dummy = 0;
 
+#if 01	//测试先增长，再争议判定 getRealFgMaskVec
+		//if (prevFgMaskVec.size() > 0 && noMoveFgMskVec.size() > 0){
+			//是否两个vec必然等长？ ×
+			//CV_Assert(prevFgMaskVec.size() == noMoveFgMskVec.size());
+		if (sdsUsePreVec.size() > 0 && sdsUsePreVec.size() == noMoveFgMskVec.size()){ //√
+
+			Mat getRealFgMaskVec_dbg;
+			noMoveFgMskVec = getRealFgMaskVec(dmat, prevFgMaskVec, noMoveFgMskVec, debugDraw, getRealFgMaskVec_dbg);
+			if (debugDraw){
+				Mat tmpFgMsk = getHumansMask(noMoveFgMskVec, dmat.size());
+				imshow("getRealFgMaskVec", tmpFgMsk);
+				imshow("getRealFgMaskVec_dbg", getRealFgMaskVec_dbg);
+			}
+		}
+#endif	//测试先增长，再争议判定 getRealFgMaskVec
+
+#endif	//两种限制增长方式
 
 #if 0	//---------------2015年6月27日14:03:15	改成： 以跟踪为准，跟踪不到的算作新增
 		//将跟踪结果作为base resVec, 初始也要查重、去重：
@@ -2259,8 +2292,8 @@ namespace zc{
 			}
 		}
 
-#elif 1	//重构后的接口：
-		vector<Mat> resVec = mergeFgMaskVec(noMoveFgMskVec, currFgMskVec);
+#elif 1	//trackingNoMove重构后merge接口：
+		vector<Mat> resVec = mergeFgMaskVec(noMoveFgMskVec, currInitFgMskVec);
 #endif
 
 		return resVec;
@@ -2288,10 +2321,10 @@ namespace zc{
 			return res;
 
 #if 0	//v1, 上一帧全部作为【确定区域】。错：手贴近另一人再分离时无法正确处理
-		Mat prevFgMaskWhole = maskVec2mask(prevFgMaskVec[0].size(), prevFgMaskVec);
+		Mat prevFgMaskWhole = maskVec2mask(dmat.size(), prevFgMaskVec);
 #elif 1	//v2, 改成先做预处理，大面积区域才算确定区域，孤立小区域不算：
 		//也错，面积判定不鲁棒！一人(m1)手臂把另一人(m2)分成两块，且m2其中一部分非常小时，因为小区域扔回【争议区域】，重新判定时，由于 dist-map 仅2D运算，导致实际m2的区域被错误划分到m1上
-		Mat prevFgMaskWhole = Mat::zeros(dmat.size(), CV_8UC1);
+		//Mat prevFgMaskWhole = Mat::zeros(dmat.size(), CV_8UC1);
 
 		//对前一帧每个mask，存大面积区域：
 		vector<Mat> prevFgMskLargeAreaVec;
@@ -2299,23 +2332,21 @@ namespace zc{
 			Mat largeArea = largeContPassFilter(prevFgMaskVec[i], CONT_AREA, 1200);
 			prevFgMskLargeAreaVec.push_back(largeArea);
 
-			prevFgMaskWhole.setTo(UCHAR_MAX, largeArea);
+			//prevFgMaskWhole.setTo(UCHAR_MAX, largeArea);
 		}
+		Mat prevFgMaskLargeAreaWhole = maskVec2mask(dmat.size(), prevFgMskLargeAreaVec);
 #endif	//【确定区域】判定规则
 
 		//当前帧比前一帧新增潜在区域(争议区域)：没用到？调试观察用！ 2015年7月29日13:03:46
-		Mat currUnsureMask = currPotentialMask - prevFgMaskWhole;
-
-		int distType = CV_DIST_L2,
-			maskSize = CV_DIST_MASK_PRECISE;
+		Mat currUnsureMask = currPotentialMask - prevFgMaskLargeAreaWhole;
 		
 		//对 prev-vec逐一求 dist-map:
 		vector<Mat> dtransVec;
 		for (size_t i = 0; i < prevFgMaskVecSz; i++){
 			//×
-			Mat prevFg_i = prevFgMaskVec[i];
+			//Mat prevFg_i = prevFgMaskVec[i];
 			//改成用大面积vec：
-			//Mat prevFg_i = prevFgMskLargeAreaVec[i];
+			Mat prevFg_i = prevFgMskLargeAreaVec[i];
 
 			//确定区域：
 			Mat prevFg_i_sure = prevFg_i & currPotentialMask;
@@ -2329,7 +2360,11 @@ namespace zc{
 		vector<Mat> prevFgSureVec;
 		if (debugDraw){
 			for (size_t i = 0; i < prevFgMaskVecSz; i++){
-				Mat prevFg_i = prevFgMaskVec[i];
+				//×
+				//Mat prevFg_i = prevFgMaskVec[i];
+				//改成用大面积vec：
+				Mat prevFg_i = prevFgMskLargeAreaVec[i];
+
 				//确定区域：
 				Mat prevFg_i_sure = prevFg_i & currPotentialMask;
 				prevFgSureVec.push_back(prevFg_i_sure);
@@ -2349,7 +2384,8 @@ namespace zc{
 		}
 #elif 1	//v2, 改成直接求: 效率会高？【未测试】
 		Mat dtransMin;
-		distanceTransform((prevFgMaskWhole & currPotentialMask) == 0, dtransMin, distType, maskSize);
+		//distanceTransform((prevFgMaskWhole & currPotentialMask) == 0, dtransMin, distType, maskSize);
+		distanceTransform((prevFgMaskLargeAreaWhole & currPotentialMask) == 0, dtransMin, distType, maskSize);
 #endif	//v1,v2, dtransMin 两个求法
 
 #if 0	//测试 dtransPrevWhole & dtransMin 是否等价？是！
@@ -2407,6 +2443,143 @@ namespace zc{
 		return res;
 	}//getRgMaskVec
 
+	vector<Mat> getRealFgMaskVec(const Mat &dmat, const vector<Mat> &prevFgMaskVec, const vector<Mat> &currFgMaskVec, bool debugDraw /*= false*/, OutputArray _debug_mat /*= noArray()*/){
+		Mat debug_mat; //用于输出观察的调试图
+		if (debugDraw){
+			_debug_mat.create(dmat.size(), CV_8UC3);
+			debug_mat = _debug_mat.getMat(); //获取数据指针
+			debug_mat = Mat::zeros(dmat.size(), CV_8UC3);
+		}
+
+		//返回值：
+		vector<Mat> res;
+
+		size_t prevFgMaskVecSz = prevFgMaskVec.size();
+		//有为空的时候吗? 也有！
+		CV_Assert(prevFgMaskVecSz > 0);	
+		//是否必然等长？【未测试】
+		CV_Assert(prevFgMaskVecSz == currFgMaskVec.size()); 
+
+		if (prevFgMaskVecSz == 0)
+			return res;
+
+		//重叠、孤立标记：因为洪泛法，重叠必然有传递性，所以
+		size_t currFgMaskVecSz = currFgMaskVec.size();
+		vector<bool> overlapFlagVec(currFgMaskVecSz, false);
+		for (size_t i = 0; i < currFgMaskVecSz; i++){
+			if (overlapFlagVec[i])
+				continue;
+
+			Mat currFg_i = currFgMaskVec[i];
+			for (size_t k = i + 1; k < currFgMaskVecSz; k++){
+				//理论上每到这里 overlapFlagVec[k] 必然未看过： //×
+				//CV_Assert(overlapFlagVec[k] != true); //×, e.g., 1连3, 2孤立
+				if (overlapFlagVec[k]){
+					//if (debugDraw){
+					//	Mat zeroMat = Mat::zeros(dmat.size(), CV_8UC1);
+					//	imshow("CV_Assert(overlapFlagVec[k] != true)", zeroMat);
+					//}
+
+					continue;
+				}
+
+				Mat currFg_k = currFgMaskVec[k];
+				//若重叠：
+				if (countNonZero(currFg_i & currFg_k) > 0){
+					overlapFlagVec[i] = true;
+					overlapFlagVec[k] = true;
+					//break; //不要跳出
+				}
+			}
+		}//for-重叠
+
+		Mat currFgMask_whole = maskVec2mask(dmat.size(), currFgMaskVec);
+
+		//生成【确定区域】vec:
+		vector<Mat> fgMskSureVec;
+		vector<Mat> noMoveMatVec = seedNoMove(dmat, prevFgMaskVec, gNoMoveThresh);
+		//对于每个maskSure逐一求 dist-map:
+		vector<Mat> dtransVec;
+
+		size_t noMoveMatVecSz = noMoveMatVec.size();
+		CV_Assert(noMoveMatVecSz == prevFgMaskVecSz);
+		for (size_t i = 0; i < prevFgMaskVecSz; i++){
+			//若孤立无重叠，整个都算确定区域：
+			if (!overlapFlagVec[i]){
+				fgMskSureVec.push_back(currFgMaskVec[i]);
+			}
+			//若有重叠(重合),则用上一帧没动区域:
+			else{
+				Mat fgMskSure_i = noMoveMatVec[i] & currFgMask_whole; //不用 currPotentialMask
+				fgMskSureVec.push_back(fgMskSure_i);
+			}
+
+			Mat  dtrans_i;
+			distanceTransform(fgMskSureVec[i] == 0, dtrans_i, distType, maskSize);
+			dtransVec.push_back(dtrans_i);
+		}
+
+		//调试绘制【确定区域】，K阶灰色
+		if (debugDraw){
+			Mat fgMskSure_whole = getHumansMask(fgMskSureVec, dmat.size());
+			vector<Mat> cn3(3, fgMskSure_whole);
+			cv::merge(cn3, debug_mat);
+		}
+
+		//对每个像素，得到最小的dtrans值
+		size_t dtransVecSz = dtransVec.size();//==prevFgMaskVecSz
+#if 01	//v1, 循环求 dtransMin
+		Mat dtransMin = dtransVec[0].clone();
+		for (size_t i = 1; i < dtransVecSz; i++){
+			Mat dtrans_i = dtransVec[i];
+			dtransMin = cv::min(dtrans_i, dtransMin);
+		}
+#endif
+
+		//dtransMin 与 N个dtrans比较：
+		//互斥锁矩阵，排他性：
+		Mat mutexMat = Mat::zeros(dmat.size(), CV_8UC1);
+		for (size_t i = 0; i < dtransVecSz; i++){
+			Mat msk_i = abs(dtransMin - dtransVec[i]) < 1e-5
+				& currFgMask_whole
+				& (mutexMat == 0);
+
+			mutexMat += msk_i;
+
+			res.push_back(msk_i);
+		}
+
+		//调试绘制【争议区域】，K阶【红色】
+		if (debugDraw){
+			vector<Mat> currFgUnsureVec;
+
+			size_t resSz = res.size();//==dtransVecSz
+			for (size_t i = 0; i < resSz; i++){
+				Mat res_i = res[i],
+					fgMskSure = fgMskSureVec[i];
+
+				//争议区域：
+				Mat currFgUnsure = res_i - fgMskSure;
+				currFgUnsureVec.push_back(currFgUnsure);
+			}
+
+			//Mat prevFgSureWhole = getHumansMask(prevFgSureVec, dmat.size());
+			Mat currFgUnsureWhole = getHumansMask(currFgUnsureVec, dmat.size());
+			Mat blackMat = Mat::zeros(dmat.size(), CV_8UC1);
+			vector<Mat> cn3;
+			//BGR-order:
+			cn3.push_back(blackMat);
+			cn3.push_back(blackMat);
+			cn3.push_back(currFgUnsureWhole);
+
+			Mat tmp;
+			cv::merge(cn3, tmp);
+			debug_mat += tmp;
+		}
+
+		return res;
+	}//getRealFgMaskVec
+
 
 	vector<Mat> trackFgMaskVec(Mat &dmat, const vector<Mat> &prevFgMaskVec, vector<Mat> rgMaskVec, int noMoveThresh /*= 55*/, bool debugDraw /*= false*/){
 		//seedNoMove 仅此处调用 o(╯□╰)o
@@ -2425,6 +2598,7 @@ namespace zc{
 	vector<Mat> mergeFgMaskVec(const vector<Mat> &baseVec, const vector<Mat> &newVec, bool debugDraw /*= false*/){
 		vector<Mat> resVec;
 		size_t baseVecSz = baseVec.size();
+#if 0	//2015年7月30日19:19:08	merge之前必须保证互斥性、无重复。因此这里故意不去重
 		//初始将 baseVec push resVec, 也要查重去重
 		for (size_t i = 0; i < baseVecSz; i++){
 			bool isExist = false;
@@ -2440,6 +2614,9 @@ namespace zc{
 				resVec.push_back(baseVec[i].clone());
 			}
 		}
+#elif 1	//直接复制，不去重：
+		resVec = baseVec;
+#endif
 
 		//检查若newVec 与 resVec 无重叠，新增：
 		size_t newVecSz = newVec.size();
@@ -2465,7 +2642,6 @@ namespace zc{
 		return resVec;
 	}//mergeFgMaskVec
 
-	//此版本只解决【XY视图】分离情况，对【XZ视图】分离不处理，所以不好
 	vector<Mat> separateMasksXYview(Mat dmat, vector<Mat> &inMaskVec, bool debugDraw /*= false*/){
 		vector<Mat> res;
 		size_t mskVecSz = inMaskVec.size();
@@ -2530,7 +2706,7 @@ namespace zc{
 	}//separateMasksXYview
 
 
-	vector<Mat> separateMasksXZview(Mat dmat, vector<Mat> &inMaskVec, bool debugDraw /*= false*/){
+	vector<Mat> separateMasksXZview(Mat dmat, vector<Mat> &inMaskVec, int zSepThresh /*= 300*/, bool debugDraw /*= false*/){
 		vector<Mat> res;
 		size_t mskVecSz = inMaskVec.size();
 		//对XYview 每个 mask：
@@ -2540,7 +2716,8 @@ namespace zc{
 			Mat maskedDmat = dmat.clone();
 			maskedDmat.setTo(0, mskXY_i == 0);
 			//与之前的rgThresh保持一致：
-			int rgThresh = 155;
+			//int rgThresh = gRgThresh;
+			int rgThresh = zSepThresh;
 			double ratio = 1. / rgThresh;
 			Mat tdview = dmat2tdview_core(maskedDmat, ratio);
 			tdview.convertTo(tdview, CV_8U);
@@ -2630,7 +2807,10 @@ namespace zc{
 						}
 					}
 					
-					if (fgMskIsHuman(dmat, newMskXY))
+// 					if (fgMskIsHuman(dmat, newMskXY))
+// 						res.push_back(newMskXY);
+					//fgMskIsHuman 语义不明, 改成 bboxWscale:
+					if (bboxIsHumanWscale(dmat, newMskXY))
 						res.push_back(newMskXY);
 				}
 			}//else-- contXZ_size > 1
@@ -2638,6 +2818,33 @@ namespace zc{
 
 		return res;
 	}//separateMasksXZview
+
+
+	vector<Mat> separateMasksXXview(Mat dmat, vector<Mat> &inMaskVec, bool debugDraw /*= false*/){
+		vector<Mat> res;
+
+		size_t mskVecSz = inMaskVec.size();
+		for (size_t i = 0; i < mskVecSz; i++){
+			Mat mskXY_i = inMaskVec[i];
+
+			Mat maskedDmat = dmat.clone();
+			maskedDmat.setTo(0, mskXY_i == 0);
+
+			vector<vector<Point>> contoursXY;
+			findContours(mskXY_i.clone(), contoursXY, RETR_EXTERNAL, CHAIN_APPROX_NONE);
+
+			size_t contXYsz = contoursXY.size();
+			for (size_t k = 0; k < contXYsz; k++){
+				//待【分割/舍弃】的结果：
+				Mat tmp = Mat::zeros(dmat.size(), CV_8UC1);
+				drawContours(tmp, contXYsz, i, 255, -1);
+				tmp &= mskXY_i;
+
+			}
+		}
+
+		return res;
+	}//separateMasksXXview
 
 
 	Rect contour2XZbbox(Mat dmat, vector<vector<Point>> &contours, int contIdx)
@@ -3132,8 +3339,10 @@ namespace zc{
 			cv::split(fgAreaColorMat, cn3);
 			Mat cn_v = dmat8u.clone();
 			cn_v.setTo(0, humMask_i == 0);
+			normalize(cn_v, cn_v, UCHAR_MAX / 2, UCHAR_MAX, NORM_MINMAX, -1, humMask_i);
+
 			cn3[2] = cn_v;
-			cn3[1].setTo(255);//【S】饱和度最大华
+			cn3[1].setTo(255);//【S】饱和度最大化
 
 			cv::merge(cn3, fgAreaColorMat);
 			cvtColor(fgAreaColorMat, fgAreaColorMat, COLOR_HSV2BGR);
@@ -3438,6 +3647,7 @@ namespace zc{
 
 		//static Ptr<BackgroundSubtractorMOG2> pMog2;// = createBackgroundSubtractorMOG2(history, varThresh, detectShadows);
 
+		//若视频帧循环，回到起始：
 		if (fid <= oldFid){
 #ifdef CV_VERSION_EPOCH //if opencv2.x
 			pBgSub = new BackgroundSubtractorMOG2(history, varThresh, detectShadows);
@@ -3518,7 +3728,7 @@ namespace zc{
 
 		isFirstTime = false; //放这里对吗？哪里还需要？
 
-		int rgThresh = 155;
+		int rgThresh = gRgThresh;
 		bool getMultiMasks = true;
 		//fgMskVec = zc::simpleRegionGrow(maskedDmat, sdMoveMat, rgThresh, flrApartMask, getMultiMasks);
 		fgMskVec = zc::simpleRegionGrow(dmat, sdMoveMat, rgThresh, fgMskMotion, getMultiMasks);
@@ -3539,7 +3749,7 @@ namespace zc{
 			fgMskVec = separateMasksXYview(dmat, vector<Mat>({ sdMoveMat }));
 
 #endif //N种初步增长方法
-		fgMskVec = zc::bboxFilter(dmat, fgMskVec);
+		fgMskVec = zc::bboxBatchFilter(dmat, fgMskVec);
 
 		cout << "bbb.findFgMasksUseBbox.ts: " << clock() - begt << endl;
 		if (debugDraw){
@@ -3615,7 +3825,8 @@ namespace zc{
 		//fgMskVec = zc::separateMasksXYview(dmat, fgMskVec, debugDraw);
 
 		//---------------目前使用sep-xz：
-		fgMskVec = zc::separateMasksXZview(dmat, fgMskVec, debugDraw);
+		int armLength = 800; //单臂前举伸直长度上限
+		fgMskVec = zc::separateMasksXZview(dmat, fgMskVec, armLength, debugDraw);
 		cout << "ddd.separateMasksXZview.ts: " << clock() - begt << endl;
 		static int tSumt = 0;
 		tSumt += (clock() - begttotal);
@@ -3632,11 +3843,17 @@ namespace zc{
 
 #if 10 && !SOLUTION_1	//若方案二, 增长结果反馈到 potMsk, (注意是!SOLUTION_1)
 		if (fgMskVec.size() > 0){
-			sgf::setPotentialMask(dmat, maskVec2mask(dmat.size(), fgMskVec));
+#if 0		//逻辑： region2reset = _potFgMask - newFgMask; 
+			sgf::setPotentialMask(dmat, maskVec2mask(dmat.size(), fgMskVec), debugDraw);
+#elif 1		//
+			Mat currFgMskWhole = maskVec2mask(dmat.size(), fgMskVec);
+			Mat prevFgMskWhole = maskVec2mask(dmat.size(), prevMaskVec);
+			sgf::setPotentialMask(dmat, currFgMskWhole, prevFgMskWhole, debugDraw);
+#endif
 			Mat potMskAfter = sgf::getPotentialMask();
 			if (debugDraw){
-				imshow("potMskAfter", potMskAfter);
-				imshow("sgf::_fgMask", sgf::_fgMask);
+				//imshow("potMskAfter", potMskAfter);
+				imshow("sgf::_fgMask", sgf::_potFgMask);
 				imshow("sgf::_max_dmat", sgf::_max_dmat);
 				Mat maxDmat8u;
 				sgf::_max_dmat.convertTo(maxDmat8u, CV_8UC1, 1.*UCHAR_MAX / MAX_VALID_DEPTH);
@@ -3694,7 +3911,7 @@ namespace zc{
 			imwrite("humMsk-color_" + std::to_string((long long)fid) + ".jpg", humMsk彩色);
 	}//debugDrawHumVec
 
-	vector<Mat> bboxFilter(Mat dmat, const vector<Mat> &origMasks){
+	vector<Mat> bboxBatchFilter(Mat dmat, const vector<Mat> &origMasks){
 		vector<Mat> res;
 		size_t origMskSz = origMasks.size();
 		for (size_t i = 0; i < origMskSz; i++){
@@ -3722,13 +3939,13 @@ namespace zc{
 				
 
 			//if (notTooThick && pxHeightEnough&& feetLowEnough)
-			if (fgMskIsHuman(dmat, mski))
+			if (bboxIsHuman(dmat.size(), mski))
 			{
 				res.push_back(mski);
 			}
 		}
 		return res;
-	}//bboxFilter
+	}//bboxBatchFilter
 
 	bool fgMskIsHuman(Mat dmat, Mat mask){
 		double dmin, dmax;
@@ -3754,7 +3971,6 @@ namespace zc{
 // 		//暂时放弃 notTooThick 判定， 因其可能导致不稳定
 // 		return /*notTooThick && */pxHeightEnough && feetLowEnough;
 
-		//即，暂时：2015年7月4日22:48:08
 		return bboxIsHuman(dmat.size(), bbox);
 	}//fgMskIsHuman
 
@@ -3785,6 +4001,35 @@ namespace zc{
 		//return pxHeightEnough && narrowEnough && feetLowEnough;
 		return pxHeightEnough && feetLowEnough;
 	}//bboxIsHuman
+
+	bool bboxIsHuman(Size matSize, const Mat mask){
+		Rect bbox = zc::boundingRect(mask);
+		return bboxIsHuman(matSize, bbox);
+	}//bboxIsHuman
+
+
+	bool bboxIsHumanWscale(const Mat &dmat, const Mat mask){
+		Mat hhMap = calcHeightMap1(dmat);
+		Mat wwMap = calcWidthMap(dmat, dmat.cols / 2);
+
+		Rect bbox = zc::boundingRect(mask);
+		//物理尺度, 高度下限45cm, 宽度下限20cm:
+		//高度是下边小，上减下：
+		//bool isHighEnough = hhMap.at<int>(bbox.y) - hhMap.at<int>(bbox.br().y) > 450;
+		//宽度是左边小，右减左
+		//bool isWideEnough = wwMap.at<int>(bbox.br().x) - wwMap.at<int>(bbox.x) > 200;
+
+		//bbox 四定点判定不对！改成 minMaxLoc:
+		double hMin, hMax;
+		minMaxLoc(hhMap, &hMin, &hMax, NULL, NULL, mask);
+		bool isHighEnough = hMax - hMin > 450;
+
+		double wMin, wMax;
+		minMaxLoc(wwMap, &wMin, &wMax, NULL, NULL, mask);
+		bool isWideEnough = wMax - wMin > 200;
+
+		return isHighEnough && isWideEnough && bboxIsHuman(dmat.size(), bbox);
+	}//bboxIsHumanWscale
 
 
 	cv::Mat getMorphKrnl(int radius /*= 1*/, int shape /*= MORPH_RECT*/)
@@ -4713,45 +4958,82 @@ namespace sgf{
 #if 01	//孙国飞获取允许增长mask方法
 
 	static Mat _max_dmat,	//最大深度图
-		_fgMask,	//最终调用者需要的数据
+		_potFgMask,	//最终的"允许增长mask"
 		_max_dmat_mask;	//最大深度图对应的flag-mat
 
 	Mat calcPotentialMask(const cv::Mat& dmat, const cv::Mat& dmat_old){
 		//CV_Assert(my_seg != nullptr);
 		//my_seg->buildMaxDepth(dmat, dmat_old, max_dmat, max_dmat, fgMask, fgMask, max_dmat_mask, max_dmat_mask);
-		sgf::buildMaxDepth(dmat, dmat_old, _max_dmat, _max_dmat, _fgMask, _fgMask, _max_dmat_mask, _max_dmat_mask);
+		sgf::buildMaxDepth(dmat, dmat_old, _max_dmat, _max_dmat, _potFgMask, _potFgMask, _max_dmat_mask, _max_dmat_mask);
 
-		return _fgMask;
+		return _potFgMask;
 	}//calcPotentialMask
 
 	void resetPotentialMask(){
 		_max_dmat.release();
-		_fgMask.release();
+		_potFgMask.release();
 		_max_dmat_mask.release();
 	}//resetPotentialMask
 
-	void setPotentialMask(const Mat &dmat, Mat newFgMask){
+	void setPotentialMask(const Mat &dmat, Mat newFgMask, bool debugDraw /*= false*/){
 #if 01
-		//上面不管用, 尝试同时重置 max-dmat-fg-flag:
-		_max_dmat_mask.setTo(0, (newFgMask == 0 & dmat != 0));
-
-		//上面还不管用, 尝试 _max_dmat 非fg置零, 下一帧自动更新
-		Mat region2reset = _fgMask - newFgMask;
+		//错！导致增长不完整。见 image-seq-two-man-touch-sep-wave.yaml 【P31】
+		Mat region2reset = _potFgMask - newFgMask; 
+		//改用前后帧实际增长结果之差
+		//Mat region2reset=
+		region2reset -= (dmat == 0);
+			 
+		if (debugDraw)
+			imshow("region2reset", region2reset);
 
 		//仅重置大面积区域, e.g. 离开人的椅背, 较大但又不够人体那么大
 		region2reset = zc::largeContPassFilter(region2reset, zc::CONT_AREA, 20 * 40);
+		if (debugDraw)
+			imshow("region2reset-large", region2reset);
 
+		//if (debugDraw)
+		//	imshow("region2reset-large-wo-zero-dep", region2reset);
+
+		//1. 尝试同时重置 max-dmat-fg-flag:
+		_max_dmat_mask.setTo(0, region2reset);
+
+		//2. 上面还不管用, 尝试 _max_dmat 非fg置零, 下一帧自动更新
 		_max_dmat.setTo(0, region2reset);
 		cv::add(_max_dmat, dmat, _max_dmat, region2reset);
 #endif	
 
-		//放在最后
-		_fgMask = newFgMask.clone();
+		//3. 用增长结果重置potential-mask，放在最后
+		_potFgMask = newFgMask.clone(); //舍弃, 因其导致potMask越来越小
 
 	}//setPotentialMask
 
+	void setPotentialMask(const Mat &dmat, const Mat &currFgMskWhole, const Mat &prevFgMskWhole, bool debugDraw /*= false*/){
+		Mat region2reset = prevFgMskWhole - currFgMskWhole;
+		region2reset -= (dmat == 0);
+
+		if (debugDraw)
+			imshow("region2reset", region2reset);
+
+		//仅重置大面积区域, e.g.:
+		//1. 离开人的椅背, 较大但又不够人体那么大 √
+		//2. 前减后，小碎片区域不重置
+		region2reset = zc::largeContPassFilter(region2reset, zc::CONT_AREA, 20 * 40);
+		if (debugDraw)
+			imshow("region2reset-large", region2reset);
+
+		//1. 尝试同时重置 max-dmat-fg-flag:
+		_max_dmat_mask.setTo(0, region2reset);
+
+		//2. 上面还不管用, 尝试 _max_dmat 非fg置零, 下一帧自动更新
+		_max_dmat.setTo(0, region2reset);
+		cv::add(_max_dmat, dmat, _max_dmat, region2reset);
+
+		//3. 用增长结果重置potential-mask，放在最后
+		_potFgMask.setTo(0, region2reset);
+	}//setPotentialMask
+
 	cv::Mat getPotentialMask(){
-		return _fgMask;
+		return _potFgMask;
 	}//getPotentialMask
 
 
