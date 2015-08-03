@@ -676,6 +676,12 @@ namespace sgf{
 	//孙国飞获取头部大小的包装方法
 	vector<double> getHeadSizes();
 
+	//孙国飞头部种子点 + mog运动区域联合判定初始化，的包装方法
+	//@param mog_fg 运动检测的前景mask矩阵
+	//@param range 左右各 range * headSize 像素宽范围内统计, 即总x-span: 2*range+1
+	//@param cntThresh 邻域内前景mask要满足的像素统计量
+	vector<Mat> findfgMasksMovingHead(const Mat &dmat, const Mat& mog_fg, int range = 2, int cntThresh = 100, bool debugDraw = false);
+
 #pragma endregion //孙国飞头部种子点
 
 	//@brief 孙国飞 "头部种子点 + 运动直方图峰值区域联合判定" 包装方法

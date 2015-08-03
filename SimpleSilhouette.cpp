@@ -19,8 +19,8 @@ int thickLimit = thickLimitDefault; //毫米
 const int gRgThresh = 155;
 const int gNoMoveThresh = 100;
 
-const int distType = CV_DIST_L2;
-const int maskSize = CV_DIST_MASK_PRECISE;
+const int distType = CV_DIST_L1;//CV_DIST_L2~1.0ms; L1~0.5ms
+const int maskSize = CV_DIST_MASK_PRECISE; //CV_DIST_MASK_3 差不多
 
 //一些调试颜色：
 Scalar cwhite(255, 255, 255);
@@ -2236,9 +2236,24 @@ namespace zc{
 			//CV_Assert(prevFgMaskVec.size() == noMoveFgMskVec.size());
 		if (sdsUsePreVec.size() > 0 && sdsUsePreVec.size() == noMoveFgMskVec.size()){ //√
 
+			clock_t begt = clock();
+
 			Mat getRealFgMaskVec_dbg;
 			noMoveFgMskVec = getRealFgMaskVec(dmat, prevFgMaskVec, noMoveFgMskVec, debugDraw, getRealFgMaskVec_dbg);
+			//static int fcnt = 0;
+			//static float sumt = 0;
+			//fcnt++;
+			//sumt += clock() - begt;
+			//cout << "getRealFgMaskVec.ts: " << sumt / fcnt << endl;	//1.21ms
+
 			if (debugDraw){
+				//有无 debugDraw 差了 0.3ms, 不大
+				static int fcnt = 0;
+				static float sumt = 0;
+				fcnt++;
+				sumt += clock() - begt;
+				cout << "getRealFgMaskVec.ts: " << sumt / fcnt << endl;	//1.21ms
+
 				Mat tmpFgMsk = getHumansMask(noMoveFgMskVec, dmat.size());
 				imshow("getRealFgMaskVec", tmpFgMsk);
 				imshow("getRealFgMaskVec_dbg", getRealFgMaskVec_dbg);
@@ -5047,6 +5062,16 @@ namespace sgf{
 		return my_seg->get_headSize();
 	}//getHeadSizes
 
+	vector<Mat> findfgMasksMovingHead(const Mat &dmat, const Mat& mog_fg, int range /*= 2*/, int cntThresh /*= 100*/, bool debugDraw /*= false*/){
+		CV_Assert(my_seg != nullptr);
+		vector<Point> sdHeadVec = seedHeadTempMatch(dmat, debugDraw);
+		if (sdHeadVec.size() > 0)
+			int dummy = 0;
+
+		vector<double> headSizeVec = getHeadSizes();
+
+		return my_seg->findfgMasksMovingHead(mog_fg, sdHeadVec, headSizeVec, range, cntThresh, debugDraw);
+	}//findfgMasksMovingHead
 #endif	//孙国飞头部种子点-wrapper
 
 #if 01	//孙国飞方案一两种后处理方法
