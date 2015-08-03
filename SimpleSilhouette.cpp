@@ -2299,6 +2299,105 @@ namespace zc{
 		return resVec;
 	}//trackingNoMove
 
+	cv::Mat calcPotentialMask(const Mat &dmat, const Mat moveMaskMat, const vector<Mat> &prevFgMaskVec, int noMoveThresh, bool debugDraw /*= false*/){
+		Mat validMsk;
+		//非 SOLUTION_1 弃用：	2015年7月28日21:04:19
+		//Mat flrApartMsk = fetchFloorApartMask(dmat, debugDraw);
+
+		//---------------计算所谓的potentialMask. @前景检测区域增长蒙板生成方案V0.1.docx
+#if SOLUTION_1	//v1. 2015年7月10日21:44:17	之前方案一, 去除(地面+墙面)，基本无限制增长
+		//存在问题： 沙发等“连通场景”无法分离背景
+
+		//用不动点增长出的 mask-vec
+		//改： flrApartMsk -> validMsk
+		Mat bgMsk = fetchBgMskUseWallAndHeight(dmat);
+		validMsk = flrApartMsk & (bgMsk == 0);
+
+#elif 01	//v2. 2015年7月10日21:45:47	运动像素+不动像素 && 去除地面
+#if 10	//v2 + v3, 是一回事
+		// 		int history = 100;
+		// 		double varThresh = 1;
+		// 		double learnRate = -1;
+		// 		//Mat tmp;
+		// 		validMsk = zc::maskMoveAndNoMove(dmat, prevFgMaskVec, noMoveThresh, history, varThresh, learnRate, false);
+		Mat tmp_mman;
+		validMsk = zc::maskMoveAndNoMove(dmat, moveMaskMat, prevFgMaskVec, noMoveThresh, debugDraw, tmp_mman);
+		if (debugDraw){
+			imshow("maskMoveAndNoMove-debug", tmp_mman);
+			//imshow("moveMaskMat", moveMaskMat);
+		}
+
+		//validMsk &= flrApartMsk;
+#elif 0	//v3. 2015年7月12日14:18:57	运动像素+前一帧蒙板, 
+		//实际上应该每个mask单独长成一个new-mask, 此处简化测试, N个长成一个:
+		Mat prevFgMask_whole = Mat::zeros(dmat.size(), CV_8UC1);
+		size_t prevFgMskVecSz = prevFgMaskVec.size();
+		for (size_t i = 0; i < prevFgMskVecSz; i++){
+			prevFgMask_whole += prevFgMaskVec[i];
+		}
+		validMsk = (prevFgMask_whole | moveMaskMat) & flrApartMsk;
+#endif	//v2 + v3,
+
+		if (debugDraw)
+			imshow("trackingNoMove.validMsk", validMsk);
+
+#if	10	//---------------potentialMask 做减法
+		Mat maxDepBgMask = zc::getMaxDepthBgMask(dmat, true, debugDraw);
+		//为什么闭操作？忘记了。。 2015年7月22日14:04:57
+		//cv::morphologyEx(maxDepBgMask, maxDepBgMask, MORPH_CLOSE, getMorphKrnl());
+
+		if (debugDraw){
+			imshow("trackingNoMove.maxDepBgMask", maxDepBgMask);
+			imshow("trackingNoMove.~maxDepBgMask", maxDepBgMask == 0);
+		}
+
+		//validMsk.setTo(0, maxDepBgMask);
+		validMsk &= maxDepBgMask == 0;
+#endif
+
+#endif	//方案一vs二。 v1 + v2
+
+		// 		if (debugDraw)
+		// 			imshow("trackingNoMove.validMsk-final", validMsk);
+
+#if 10	//尝试所谓面积滤波
+		validMsk = largeContPassFilter(validMsk, CONT_AREA, 10);
+		if (debugDraw)
+			imshow("trackingNoMove.validMsk-final-LCPF", validMsk);
+#endif
+
+#if 0	//测试面积滤波，仅测试
+		{
+			clock_t begt;
+			begt = clock();
+			Mat tmp = largeContPassFilter(validMsk, CONT_LENGTH, 10);
+
+			static int fcnt = 0;
+			static float sumt = 0;
+			fcnt++;
+			sumt += clock() - begt;
+			cout << "largeContPassFilter-CONT_LENGTH.ts: " << sumt / fcnt << endl;	//1.21ms
+
+			imshow("largeContPassFilter-CONT_LENGTH", tmp);
+		}
+		{
+			clock_t begt;
+			begt = clock();
+			Mat tmp = largeContPassFilter(validMsk, CONT_AREA, 10);
+
+			static int fcnt = 0;
+			static float sumt = 0;
+			fcnt++;
+			sumt += clock() - begt;
+			cout << "largeContPassFilter-CONT_AREA.ts: " << sumt / fcnt << endl; //1.29ms
+
+			imshow("largeContPassFilter-CONT_AREA", tmp);
+		}
+#endif	//测试面积滤波，仅测试
+
+		return validMsk;
+	}//calcPotentialMask
+
 	vector<Mat> getRgMaskVec(const Mat &dmat, const vector<Mat> &prevFgMaskVec, Mat currPotentialMask, bool debugDraw /*= false*/, OutputArray _debug_mat /*= noArray()*/){
 		Mat debug_mat; //用于输出观察的调试图
 		if (debugDraw){
@@ -2737,7 +2836,8 @@ namespace zc{
 				res.push_back(mskXY_i);
 			}
 			else{ //contXZ_size > 1, 包括两部分左右分开，前后分开情境
-				//1. 方案一： 重新增长，长成几个独立部分算几个：
+				
+#if 0			//1. 方案一： 重新增长，长成几个独立部分算几个：
 				//【缺陷】：可能分过头，要再merge合并，更麻烦低效，【舍弃】
 // 				vector<vector<Point>> contoursXY;
 // 				findContours(mski.clone(), contoursXY, RETR_EXTERNAL, CHAIN_APPROX_NONE);
@@ -2764,7 +2864,7 @@ namespace zc{
 // 						res.push_back(subMskVec[i]);
 // 				}
 
-				//2. 方案二： contoursXZ反投影，每个cont必须仅得到一个humMsk：2015年6月27日23:30:01
+#elif 1			//2. 方案二： contoursXZ反投影，每个cont必须仅得到一个humMsk：2015年6月27日23:30:01
 				//对XZview每个cont：
 
 				bool debugError = false;
@@ -2807,12 +2907,16 @@ namespace zc{
 						}
 					}
 					
-// 					if (fgMskIsHuman(dmat, newMskXY))
-// 						res.push_back(newMskXY);
-					//fgMskIsHuman 语义不明, 改成 bboxWscale:
-					if (bboxIsHumanWscale(dmat, newMskXY))
+					//if (fgMskIsHuman(dmat, newMskXY))
+					//	res.push_back(newMskXY);
+					//fgMskIsHuman 语义不明, 改成 bboxWscale: 2015年8月2日23:58:41
+					//if (bboxIsHumanWscale(dmat, newMskXY))
+					//bboxIsHumanWscale 不够好, 改用wscale面积： 2015年8月3日00:00:26
+					if (maskedCvSum(dmat, newMskXY)[0] > 100 * 100 * 1000)
 						res.push_back(newMskXY);
 				}
+#endif	//重新增长 vs. contoursXZ反投影
+
 			}//else-- contXZ_size > 1
 		}//for- i < mskVecSz
 
@@ -3566,6 +3670,7 @@ namespace zc{
 		dmat.convertTo(dm_show, CV_8UC1, 1.*UCHAR_MAX / MAX_VALID_DEPTH);
 		dmat8u = dm_show;
 
+		//@deprecated 没用到
 		static bool isFirstTime = true;
 		static int oldFid = fid;
 		static int frameCnt = -1;//fake frameCnt!!
@@ -3687,6 +3792,7 @@ namespace zc{
 		if (debugDraw){
 			imshow("fgMskMog2", fgMskMotion);
 		}
+
 #if 0	//smooth-mask. @code: D:\opencv300\sources\samples\cpp\bgfg_segm.cpp
 		//若要精确，不该膨胀或模糊
 		int ksize = 11;
@@ -3806,6 +3912,87 @@ namespace zc{
 		imshow("testMOG2mat", testMOG2mat);
 #endif	//B2. 测试 maskMoveAndNoMove
 
+#if 1	//post-B: 若相机晃动, 则重置, 大面积突变噪声也会导致重置 good！
+		//Mat fgMskWhole = maskVec2mask(dmat.size(), fgMskVec);
+		Mat prevFgMskWhole = maskVec2mask(dmat.size(), prevMaskVec);
+
+		//总体: !(前景 | 无效值) 
+		//Mat validBgMsk = (fgMskWhole == 0) & (dmat != 0);
+		Mat validBgMsk = (prevFgMskWhole == 0) & (dmat != 0);
+
+		//bg上运动检测(e.g., MOG2)像素:
+		Mat bgMoveMask = fgMskMotion & validBgMsk;
+
+		double bgMoveRatioLow = countNonZero(bgMoveMask)*1. / countNonZero(validBgMsk);
+
+		//---------------2015年8月2日22:45:34
+		//单单 bgMoveRatioLow > bgMoveRatioThresh 不行, 无法区分相机晃动 与 人体拖拽大物体(背景上MOG面积增大)情形, 所以增加 dilate < High 判定:
+		//【还是不好】！！
+		Mat bgMoveMaskDilate;
+		dilate(bgMoveMask, bgMoveMaskDilate, getMorphKrnl(2));
+		double bgMoveRatioHigh = countNonZero(bgMoveMaskDilate)*1. / countNonZero(validBgMsk);
+
+		//---------------2015年8月2日23:22:26 增加"物理尺度面积" 判定, 即深度值求和:
+		double bgMoveRatioWscale = 1. * maskedCvSum(dmat, bgMoveMask)[0] / maskedCvSum(dmat, validBgMsk)[0];
+		
+		if (debugDraw){
+			//测试更准确的 ^2 面积, bgMoveRatioWscale 其实是 ^1, 不是真正【面积】:
+			//发现 bgMoveRatioWscale与 _real 相差 <0.1, 说明 ^2 不重要. 2015年8月3日02:38:53
+			clock_t begt = clock();
+#if 01	//直接 16u, 0.1ms
+			Mat wsAreaDmat = dmat / XTION_FOCAL_XY;
+#elif 1	//先转成 32f, 0.4ms
+			Mat wsAreaDmat;
+			dmat.convertTo(wsAreaDmat, CV_32FC1);
+			wsAreaDmat /= XTION_FOCAL_XY;
+#endif	//16u vs. 32f
+			wsAreaDmat = wsAreaDmat.mul(wsAreaDmat);
+			double bgMoveRatioWscale_real = 1. * maskedCvSum(wsAreaDmat, bgMoveMask)[0] / maskedCvSum(wsAreaDmat, validBgMsk)[0];
+
+			static int fcnt = 0;
+			static float sumt = 0;
+			fcnt++;
+			sumt += clock() - begt;
+			cout << "bgMoveRatioWscale_real.ts: " << sumt / fcnt << endl;	//0.1ms
+
+			Mat validBgMsk_dbg = validBgMsk.clone();
+			cvtColor(validBgMsk_dbg, validBgMsk_dbg, COLOR_GRAY2BGR);
+			validBgMsk_dbg.setTo(Scalar(0, 255, 0), bgMoveMask);
+			validBgMsk_dbg.setTo(Scalar(255, 0, 0), bgMoveMaskDilate - bgMoveMask);
+
+			putText(validBgMsk_dbg, "ratioLow: " + to_string((double)bgMoveRatioLow), Point(0, 30), FONT_HERSHEY_PLAIN, 2, Scalar(0, 0, 255), 2);
+			putText(validBgMsk_dbg, "ratioHigh: " + to_string((double)bgMoveRatioHigh), Point(0, 60), FONT_HERSHEY_PLAIN, 2, Scalar(0, 0, 255), 2);
+			putText(validBgMsk_dbg, "ratioWs: " + to_string((double)bgMoveRatioWscale), Point(0, 90), FONT_HERSHEY_PLAIN, 2, Scalar(0, 0, 255), 2);
+			putText(validBgMsk_dbg, "ratioWs_R: " + to_string((double)bgMoveRatioWscale_real), Point(0, 120), FONT_HERSHEY_PLAIN, 2, Scalar(0, 0, 255), 2);
+
+			imshow("validBgMsk_dbg", validBgMsk_dbg);
+		}
+
+		double bgMoveRatioThreshLow = 0.35;
+		double bgMoveRatioThreshHigh = 0.85;
+		double bgMoveRatioWscaleThresh = 0.5;
+		if (01
+			//&& bgMoveRatioLow > bgMoveRatioThreshLow 
+			//&& bgMoveRatioHigh > bgMoveRatioThreshHigh
+			&& bgMoveRatioWscale > bgMoveRatioWscaleThresh
+			){
+			//此时 fgMskVec 为 (bbb) 步骤结果, 不含跟踪, 要重置, 即, 前面检测到的仍跟踪, 新来的不合并:
+			//fgMskVec.clear(); 
+			//把清空改为沿用不动点：
+			fgMskVec = seedNoMove(dmat, prevMaskVec, noMoveThresh);
+
+			//MOG2-mask 重置:
+			fgMskMotion = Mat::zeros(dmat.size(), CV_8UC1);
+
+			//最大深度mat, mask 相关重置：
+			//sgf::releasePotentialMask();
+			//不要 release, 改为仅重置非 fgMskVec 区域:
+			sgf::setPotentialMask(dmat, validBgMsk);
+		}
+
+
+#endif	//post-B: 若相机晃动, 则重置, 大面积突变噪声也会导致重置 good！
+
 		//C.不动点跟踪，使前景补全、稳定：
 		begt = clock();
 		fgMskVec = zc::trackingNoMove(dmat, prevMaskVec, fgMskVec, noMoveThresh, fgMskMotion, debugDraw);
@@ -3843,26 +4030,45 @@ namespace zc{
 
 #if 10 && !SOLUTION_1	//若方案二, 增长结果反馈到 potMsk, (注意是!SOLUTION_1)
 		if (fgMskVec.size() > 0){
-#if 0		//逻辑： region2reset = _potFgMask - newFgMask; 
-			sgf::setPotentialMask(dmat, maskVec2mask(dmat.size(), fgMskVec), debugDraw);
-#elif 1		//
+#if 0		//之前实现
+#if 0		//重置逻辑v1: region2reset = _potFgMask - newFgMask; 
+			Mat currFgMskWhole = maskVec2mask(dmat.size(), fgMskVec);
+			sgf::setPotentialMask(dmat, currFgMskWhole, debugDraw);
+#elif 01	//逻辑v2: region2reset = prevFgMskWhole - currFgMskWhole;
 			Mat currFgMskWhole = maskVec2mask(dmat.size(), fgMskVec);
 			Mat prevFgMskWhole = maskVec2mask(dmat.size(), prevMaskVec);
 			sgf::setPotentialMask(dmat, currFgMskWhole, prevFgMskWhole, debugDraw);
 #endif
-			Mat potMskAfter = sgf::getPotentialMask();
-			if (debugDraw){
-				//imshow("potMskAfter", potMskAfter);
-				imshow("sgf::_fgMask", sgf::_potFgMask);
-				imshow("sgf::_max_dmat", sgf::_max_dmat);
-				Mat maxDmat8u;
-				sgf::_max_dmat.convertTo(maxDmat8u, CV_8UC1, 1.*UCHAR_MAX / MAX_VALID_DEPTH);
-				imshow("maxDmat8u", maxDmat8u);
+#elif 1		//重构 setPotentialMask, 并采用之前的逻辑v2
+			Mat currFgMskWhole = maskVec2mask(dmat.size(), fgMskVec);
+			Mat prevFgMskWhole = maskVec2mask(dmat.size(), prevMaskVec);
+			Mat region2reset = prevFgMskWhole - currFgMskWhole;
+			region2reset -= (dmat == 0);
 
-				imshow("sgf::_max_dmat_mask", sgf::_max_dmat_mask);
-			}
-		}
+			if (debugDraw)
+				imshow("region2reset", region2reset);
+
+			//仅重置大面积区域, e.g.:
+			//1. 离开人的椅背, 较大但又不够人体那么大 √
+			//2. 前减后，小碎片区域不重置
+			region2reset = zc::largeContPassFilter(region2reset, zc::CONT_AREA, 20 * 40);
+			if (debugDraw)
+				imshow("region2reset-large", region2reset);
+			sgf::setPotentialMask(dmat, region2reset);
 #endif
+
+		}
+		if (debugDraw){
+			imshow("sgf::_fgMask", sgf::_potFgMask);
+			//imshow("sgf::_max_dmat", sgf::_max_dmat);
+			Mat maxDmat8u;
+			sgf::_max_dmat.convertTo(maxDmat8u, CV_8UC1, 1.*UCHAR_MAX / MAX_VALID_DEPTH);
+			imshow("maxDmat8u", maxDmat8u);
+
+			imshow("sgf::_max_dmat_mask", sgf::_max_dmat_mask);
+		}
+
+#endif	//反馈重置 potMsk
 
 
 #if SOLUTION_1	//E. 测试孙国飞【两种后处理】方法
@@ -4751,8 +4957,7 @@ namespace zc{
 	}
 
 
-	cv::Mat largeContPassFilter(const Mat &mask, LCPF_MODE mode /*= CONT_LENGTH*/, int contSizeThresh /*= 10*/)
-{
+	cv::Mat largeContPassFilter(const Mat &mask, LCPF_MODE mode /*= CONT_LENGTH*/, int contSizeThresh /*= 10*/){
 		Mat res = mask.clone();
 
 		vector<vector<Point>> contours;
@@ -4784,104 +4989,12 @@ namespace zc{
 		return res;
 	}//largeContPassFilter
 
-	cv::Mat calcPotentialMask(const Mat &dmat, const Mat moveMaskMat, const vector<Mat> &prevFgMaskVec, int noMoveThresh, bool debugDraw /*= false*/){
-		Mat validMsk;
-		//非 SOLUTION_1 弃用：	2015年7月28日21:04:19
-		//Mat flrApartMsk = fetchFloorApartMask(dmat, debugDraw);
 
-		//---------------计算所谓的potentialMask. @前景检测区域增长蒙板生成方案V0.1.docx
-#if SOLUTION_1	//v1. 2015年7月10日21:44:17	之前方案一, 去除(地面+墙面)，基本无限制增长
-		//存在问题： 沙发等“连通场景”无法分离背景
-
-		//用不动点增长出的 mask-vec
-		//改： flrApartMsk -> validMsk
-		Mat bgMsk = fetchBgMskUseWallAndHeight(dmat);
-		validMsk = flrApartMsk & (bgMsk == 0);
-
-#elif 01	//v2. 2015年7月10日21:45:47	运动像素+不动像素 && 去除地面
-#if 10	//v2 + v3, 是一回事
-		// 		int history = 100;
-		// 		double varThresh = 1;
-		// 		double learnRate = -1;
-		// 		//Mat tmp;
-		// 		validMsk = zc::maskMoveAndNoMove(dmat, prevFgMaskVec, noMoveThresh, history, varThresh, learnRate, false);
-		Mat tmp_mman;
-		validMsk = zc::maskMoveAndNoMove(dmat, moveMaskMat, prevFgMaskVec, noMoveThresh, debugDraw, tmp_mman);
-		if (debugDraw){
-			imshow("maskMoveAndNoMove-debug", tmp_mman);
-			//imshow("moveMaskMat", moveMaskMat);
-		}
-
-		//validMsk &= flrApartMsk;
-#elif 0	//v3. 2015年7月12日14:18:57	运动像素+前一帧蒙板, 
-		//实际上应该每个mask单独长成一个new-mask, 此处简化测试, N个长成一个:
-		Mat prevFgMask_whole = Mat::zeros(dmat.size(), CV_8UC1);
-		size_t prevFgMskVecSz = prevFgMaskVec.size();
-		for (size_t i = 0; i < prevFgMskVecSz; i++){
-			prevFgMask_whole += prevFgMaskVec[i];
-		}
-		validMsk = (prevFgMask_whole | moveMaskMat) & flrApartMsk;
-#endif	//v2 + v3,
-
-		if (debugDraw)
-			imshow("trackingNoMove.validMsk", validMsk);
-
-#if	10	//---------------potentialMask 做减法
-		Mat maxDepBgMask = zc::getMaxDepthBgMask(dmat, true, debugDraw);
-		//为什么闭操作？忘记了。。 2015年7月22日14:04:57
-		//cv::morphologyEx(maxDepBgMask, maxDepBgMask, MORPH_CLOSE, getMorphKrnl());
-
-		if (debugDraw){
-			imshow("trackingNoMove.maxDepBgMask", maxDepBgMask);
-			imshow("trackingNoMove.~maxDepBgMask", maxDepBgMask == 0);
-		}
-
-		//validMsk.setTo(0, maxDepBgMask);
-		validMsk &= maxDepBgMask == 0;
-#endif
-
-#endif	//方案一vs二。 v1 + v2
-
-// 		if (debugDraw)
-// 			imshow("trackingNoMove.validMsk-final", validMsk);
-
-#if 10	//尝试所谓面积滤波
-		validMsk = largeContPassFilter(validMsk, CONT_AREA, 10);
-		if (debugDraw)
-			imshow("trackingNoMove.validMsk-final-LCPF", validMsk);
-#endif
-
-#if 0	//测试面积滤波，仅测试
-		{
-			clock_t begt;
-			begt = clock();
-			Mat tmp = largeContPassFilter(validMsk, CONT_LENGTH, 10);
-
-			static int fcnt = 0;
-			static float sumt = 0;
-			fcnt++;
-			sumt += clock() - begt;
-			cout << "largeContPassFilter-CONT_LENGTH.ts: " << sumt / fcnt << endl;	//1.21ms
-
-			imshow("largeContPassFilter-CONT_LENGTH", tmp);
-		}
-		{
-			clock_t begt;
-			begt = clock();
-			Mat tmp = largeContPassFilter(validMsk, CONT_AREA, 10);
-
-			static int fcnt = 0;
-			static float sumt = 0;
-			fcnt++;
-			sumt += clock() - begt;
-			cout << "largeContPassFilter-CONT_AREA.ts: " << sumt / fcnt << endl; //1.29ms
-
-			imshow("largeContPassFilter-CONT_AREA", tmp);
-		}
-#endif	//测试面积滤波，仅测试
-
-		return validMsk;
-	}//calcPotentialMask
+	cv::Scalar maskedCvSum( const Mat &src, const Mat &mask ){
+		Mat tmp = src.clone();
+		tmp.setTo(0, mask == 0);
+		return cv::sum(tmp);
+	}
 
 }//zc-测试代码放这里
 
@@ -4969,42 +5082,23 @@ namespace sgf{
 		return _potFgMask;
 	}//calcPotentialMask
 
-	void resetPotentialMask(){
+	void releasePotentialMask(){
 		_max_dmat.release();
 		_potFgMask.release();
 		_max_dmat_mask.release();
-	}//resetPotentialMask
+	}//releasePotentialMask
 
-	void setPotentialMask(const Mat &dmat, Mat newFgMask, bool debugDraw /*= false*/){
-#if 01
-		//错！导致增长不完整。见 image-seq-two-man-touch-sep-wave.yaml 【P31】
-		Mat region2reset = _potFgMask - newFgMask; 
-		//改用前后帧实际增长结果之差
-		//Mat region2reset=
-		region2reset -= (dmat == 0);
-			 
-		if (debugDraw)
-			imshow("region2reset", region2reset);
-
-		//仅重置大面积区域, e.g. 离开人的椅背, 较大但又不够人体那么大
-		region2reset = zc::largeContPassFilter(region2reset, zc::CONT_AREA, 20 * 40);
-		if (debugDraw)
-			imshow("region2reset-large", region2reset);
-
-		//if (debugDraw)
-		//	imshow("region2reset-large-wo-zero-dep", region2reset);
-
+	void setPotentialMask(const Mat &dmat, Mat region2reset, bool debugDraw /*= false*/){
 		//1. 尝试同时重置 max-dmat-fg-flag:
 		_max_dmat_mask.setTo(0, region2reset);
 
 		//2. 上面还不管用, 尝试 _max_dmat 非fg置零, 下一帧自动更新
 		_max_dmat.setTo(0, region2reset);
 		cv::add(_max_dmat, dmat, _max_dmat, region2reset);
-#endif	
 
 		//3. 用增长结果重置potential-mask，放在最后
-		_potFgMask = newFgMask.clone(); //舍弃, 因其导致potMask越来越小
-
+		//_potFgMask = newFgMask.clone(); //舍弃, 因其导致potMask越来越小
+		_potFgMask.setTo(0, region2reset);
 	}//setPotentialMask
 
 	void setPotentialMask(const Mat &dmat, const Mat &currFgMskWhole, const Mat &prevFgMskWhole, bool debugDraw /*= false*/){

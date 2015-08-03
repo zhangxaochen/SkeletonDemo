@@ -659,6 +659,7 @@ namespace zc{
 	//@param mode CONT_LENGTH, 使用轮廓周长判定(qvga~0.2ms); CONT_AREA, 使用轮廓面积判定(qvga~0.24ms)
 	Mat largeContPassFilter(const Mat &mask, LCPF_MODE mode = CONT_LENGTH, int contSizeThresh = 10);
 
+	Scalar maskedCvSum(const Mat &src, const Mat &mask);
 }//zc-测试代码放这里
 
 using zc::MyBGSubtractor;
@@ -692,12 +693,14 @@ namespace sgf{
 	Mat calcPotentialMask(const cv::Mat& dmat, const cv::Mat& dmat_old);
 
 	//@brief 重置几个全局状态量, 清空几个状态量
-	void resetPotentialMask();
+	void releasePotentialMask();
 
 	//@brief 主循环得到真实前景mask-vec之后, "允许增长mask"置为 mask-vec-whole
-	//@param newFgMask 当前帧N个前景合并成一个， 与当前 _potFgMask 比对
-	void setPotentialMask(const Mat &dmat, Mat newFgMask, bool debugDraw = false);
+	//@param @deleted newFgMask 当前帧N个前景合并成一个， 与当前 _potFgMask 比对
+	//@param region2reset 要重置的区域mask, 由调用者决定其生成策略
+	void setPotentialMask(const Mat &dmat, Mat region2reset, bool debugDraw = false);
 
+	//@deprecated, v1接口中 newFgMask 改为 region2reset, 此接口弃用
 	//@brief overloading, 之前 region2reset = _potFgMask - newFgMask 逻辑有问题， 改用前后帧real-fgMask 比对
 	void setPotentialMask(const Mat &dmat, const Mat &currFgMskWhole, const Mat	&prevFgMskWhole, bool debugDraw = false);
 
