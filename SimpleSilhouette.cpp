@@ -2869,6 +2869,11 @@ namespace zc{
 
 				bool debugError = false;
 
+				//统计当前cont sepXZ之后有几部分又入队了：
+				int cnt = 0;
+				//若分开的几部分面积都很小, 最终选面积最大的入队, 以保证不会突然消失
+				int maxArea = 0;
+				Mat maxAreaMat;
 				for (size_t i = 0; i < contXZ_size; i++){
 					//待填充的结果：
 					Mat newMskXY = Mat::zeros(dmat.size(), CV_8UC1);
@@ -2907,14 +2912,27 @@ namespace zc{
 						}
 					}
 					
+					//1. 先前的判定
 					//if (fgMskIsHuman(dmat, newMskXY))
-					//	res.push_back(newMskXY);
-					//fgMskIsHuman 语义不明, 改成 bboxWscale: 2015年8月2日23:58:41
+					//2. fgMskIsHuman 语义不明, 改成 bboxWscale: 2015年8月2日23:58:41
 					//if (bboxIsHumanWscale(dmat, newMskXY))
-					//bboxIsHumanWscale 不够好, 改用wscale面积： 2015年8月3日00:00:26
-					if (maskedCvSum(dmat, newMskXY)[0] > 100 * 100 * 1000)
+					//3. bboxIsHumanWscale 不够好, 改用wscale面积： 2015年8月3日00:00:26
+					if (maskedCvSum(dmat, newMskXY)[0] > 100 * 100 * 1000){
 						res.push_back(newMskXY);
-				}
+						cnt++;
+					}
+
+					int currArea = countNonZero(newMskXY);
+					if (currArea > maxArea){
+						maxArea = currArea;
+						maxAreaMat = newMskXY;
+					}
+				}//for-contXZ_size
+
+				//若之前分开的几部分因为面积太小都没有入队, 则挑最大的入队:
+				if (cnt == 0)
+					res.push_back(maxAreaMat);
+
 #endif	//重新增长 vs. contoursXZ反投影
 
 			}//else-- contXZ_size > 1
