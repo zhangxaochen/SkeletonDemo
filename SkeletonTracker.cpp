@@ -7,11 +7,16 @@
 using namespace std;
 //using namespace zc;
 
-#define ZCDEBUG 1
+#define ZCDEBUG 01
 #define CAPG_SKEL_VERSION_0_1 //最初交付的代码版本
 
 #undef CAPG_SKEL_VERSION_0_1 //改用 v0.9. 2015年7月1日00:07:01
 #define CAPG_SKEL_VERSION_0_9 //对应 skeleton_test v0.9. 2015年6月30日23:59:18
+
+#undef CAPG_SKEL_VERSION_0_9
+#define CAPG_SKEL_VERSION_0_9_1	//增加方案二（限制增长mask），方案一增加后处理分割（by孙国飞）两种方法，三者对比测试
+
+//#undef CAPG_SKEL_VERSION_0_9_1
 
 int g_ImgIndex = 0;
 
@@ -68,26 +73,27 @@ void nmhSilhouAndSklt(Mat &dm){
 
 namespace sensekit { namespace plugins { namespace skeleton {
 
-    const size_t SkeletonTracker::MAX_SKELETONS = 6;
+	const size_t SkeletonTracker::MAX_SKELETONS = 6;
 
-    void SkeletonTracker::on_frame_ready(StreamReader& reader, Frame& frame)
-    {
+	void SkeletonTracker::on_frame_ready(StreamReader& reader, Frame& frame)
+	{
 		cout << "SkeletonTracker::on_frame_ready" << endl;
 
-        if (!m_skeletonStream->has_connections())
-            return; // don't waste cycles if no one is listening
+		if (!m_skeletonStream->has_connections())
+			return; // don't waste cycles if no one is listening
 
-        sensekit::DepthFrame depthFrame = frame.get<DepthFrame>();
+		sensekit::DepthFrame depthFrame = frame.get<DepthFrame>();
 
-        if (!depthFrame.is_valid())
-            return;
+		if (!depthFrame.is_valid())
+			return;
 
-        // do something cool
+		// do something cool
 		int ww = depthFrame.resolutionX(),
 			hh = depthFrame.resolutionY();
-		float scaleFactor = ww * 1. / IMAGE_WIDTH;
+		float scaleFactor = ww * 1. / QVGA_WIDTH;
 
-		Mat dm(hh, ww, CV_16UC1, (void*)depthFrame.data());
+		Mat dmat(hh, ww, CV_16UC1, (void*)depthFrame.data());
+		resize(dmat, dmat, Size(ww / scaleFactor, hh / scaleFactor));
 			
 #ifdef CAPG_SKEL_VERSION_0_1
 
@@ -97,12 +103,12 @@ namespace sensekit { namespace plugins { namespace skeleton {
 
 		//---------------2. 从多个种子点， 区域增长， 到提取多个骨架：
 		Mat dm_draw;
-		normalize(dm, dm_draw, UCHAR_MAX, 0, NORM_MINMAX, CV_8UC1);
+		normalize(dmat, dm_draw, UCHAR_MAX, 0, NORM_MINMAX, CV_8UC1);
 
 		const string sgf_configPath = "../../../plugins/orbbec_skeleton/sgf_seed/config.txt",
 			sgf_headTemplatePath = "../../../plugins/orbbec_skeleton/sgf_seed/headtemplate.bmp";
 
-		vector<Point> sgfSeeds = zc::getHeadSeeds(dm, sgf_configPath, sgf_headTemplatePath, ZCDEBUG);
+		vector<Point> sgfSeeds = zc::getHeadSeeds(dmat, sgf_configPath, sgf_headTemplatePath, ZCDEBUG);
 		if (ZCDEBUG){
 			for (size_t i = 0; i < sgfSeeds.size(); i++){
 				Point sdi = sgfSeeds[i];
@@ -111,8 +117,8 @@ namespace sensekit { namespace plugins { namespace skeleton {
 			imshow("1-dm_draw", dm_draw);
 		}
 
-		Mat flrApartMsk = zc::getFloorApartMask(dm, ZCDEBUG);
-		Mat sgfFgMsk = zc::simpleRegionGrow(dm, sgfSeeds, 100, flrApartMsk, ZCDEBUG);
+		Mat flrApartMsk = zc::getFloorApartMask(dmat, ZCDEBUG);
+		Mat sgfFgMsk = zc::simpleRegionGrow(dmat, sgfSeeds, 100, flrApartMsk, ZCDEBUG);
 		if (ZCDEBUG)
 			imshow("2-sgfFgMsk", sgfFgMsk);
 
@@ -127,7 +133,7 @@ namespace sensekit { namespace plugins { namespace skeleton {
 
 		//兼容林驰代码：
 		Mat tmpDm;
-		dm.convertTo(tmpDm, CV_32SC1);
+		dmat.convertTo(tmpDm, CV_32SC1);
 		//背景填充最大值，所以前景反而黑色：
 		tmpDm.setTo(INT_MAX, sgfFgMsk == 0);
 
@@ -208,18 +214,24 @@ namespace sensekit { namespace plugins { namespace skeleton {
 		//+++++++++++++++
 #endif // CAPG_SKEL_VERSION_0_1
 
+#ifdef CAPG_SKEL_VERSION_0_9_1
+		sensekit_frame_index_t fid = depthFrame.frameIndex();
+		vector<Mat> fgMskVec = zc::getFgMaskVec(dmat, fid, ZCDEBUG);
+		zc::getHumanObjVec(dmat, fgMskVec, humVec);
+		zc::debugDrawHumVec(dmat, fgMskVec, humVec, -1);
+#endif // CAPG_SKEL_VERSION_0_9_1
 
-        sensekit_skeletonframe_wrapper_t* skeletonFrame = m_skeletonStream->begin_write(depthFrame.frameIndex());
+		sensekit_skeletonframe_wrapper_t* skeletonFrame = m_skeletonStream->begin_write(depthFrame.frameIndex());
 
-        if (skeletonFrame != nullptr)
-        {
-            skeletonFrame->frame.skeletons = reinterpret_cast<sensekit_skeleton_t*>(&(skeletonFrame->frame_data));
-            skeletonFrame->frame.skeletonCount = SkeletonTracker::MAX_SKELETONS;
+		if (skeletonFrame != nullptr)
+		{
+			skeletonFrame->frame.skeletons = reinterpret_cast<sensekit_skeleton_t*>(&(skeletonFrame->frame_data));
+			skeletonFrame->frame.skeletonCount = SkeletonTracker::MAX_SKELETONS;
 
-            sensekit_skeleton_t& skeleton = skeletonFrame->frame.skeletons[0];
-            skeleton.trackingId = 1;
-            skeleton.status = SENSEKIT_SKELETON_STATUS_TRACKED;
-            skeleton.jointCount = SENSEKIT_MAX_JOINTS;
+			sensekit_skeleton_t& skeleton = skeletonFrame->frame.skeletons[0];
+			skeleton.trackingId = 1;
+			skeleton.status = SENSEKIT_SKELETON_STATUS_TRACKED;
+			skeleton.jointCount = SENSEKIT_MAX_JOINTS;
 
 			//zhangxaochen:
 			static CoordinateMapper mapper = reader.stream<sensekit::DepthStream>().coordinateMapper();
@@ -278,9 +290,37 @@ namespace sensekit { namespace plugins { namespace skeleton {
 
 #endif // CAPG_SKEL_VERSION_0_1
 
-            
-            m_skeletonStream->end_write();
-        }
-    }
+#ifdef CAPG_SKEL_VERSION_0_9_1
+			size_t humVecSz = humVec.size();
+			for (int i = 0; i < min(humVecSz, MAX_SKELETONS); i++){
+				HumanObj humObj = humVec[i];
+				CapgSkeleton sklt = humObj.getSkeleton();
+				int humId = humObj.getHumId();
+
+				sensekit_skeleton_t& skeleton = skeletonFrame->frame.skeletons[i];
+				skeleton.trackingId = humId;
+				skeleton.status = SENSEKIT_SKELETON_STATUS_TRACKED;
+				skeleton.jointCount = SENSEKIT_MAX_JOINTS;
+
+				cout << "==================" << humId << endl;
+				for (size_t i = 0; i < 8; i++){
+					skeleton.joints[i].status = SENSEKIT_JOINT_STATUS_TRACKED;
+					skeleton.joints[i].jointType = static_cast<sensekit_joint_type>(i + 1); //e.g, SENSEKIT_JOINT_TYPE_LEFT_SHOULDER
+					Vector3f pt = { sklt[i].x()*scaleFactor, sklt[i].y()*scaleFactor, sklt[i].z()*1.f };
+					cout << "[ " << pt.x << ", " << pt.y << ", " << pt.z << " ]" << endl;
+
+					//pt in world-scale-coord
+					Vector3f ptw = mapper.convert_depth_to_world(pt);
+					cout << "ws: [ " << ptw.x << ", " << ptw.y << ", " << ptw.z << " ]" << endl;
+
+					//skeleton.joints[i].position = *(sensekit_vector3f_t*)(
+					skeleton.joints[i].position = *reinterpret_cast<sensekit_vector3f_t*>(&ptw);
+				}
+			}
+#endif // CAPG_SKEL_VERSION_0_9_1
+
+			m_skeletonStream->end_write();
+		}
+	}
 
 }}}

@@ -1,5 +1,5 @@
 #include "sgf_segment.h"
-//#include "SimpleSilhouette.h"
+#include "../SimpleSilhouette.h"
 #include <time.h>
 #include <cmath>
 
@@ -2169,7 +2169,7 @@ void sgf::buildMaxDepth(const Mat& dmat, const Mat& dmat_old, const Mat& max_dma
 		//imshow("fgMask raw",fgMask);
 		*/
 		Mat tmp = Mat::zeros(fgMask.rows, fgMask.cols, CV_8U);
-		tmp = largeContPassFilter(fgMask, CONT_AREA, 200);  //过滤掉噪声引起的检测为前景的错误部分（通过面积大小）
+		tmp = zc::largeContPassFilter(fgMask, zc::CONT_AREA, 200);  //过滤掉噪声引起的检测为前景的错误部分（通过面积大小）
 #if 0
 		vector<vector<Point>> c;
 		Mat tmp1=fgMask.clone();

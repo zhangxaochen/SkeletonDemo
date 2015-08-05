@@ -1273,6 +1273,9 @@ namespace zc{
 	}
 
 	void drawOneSkeleton(Mat &img, CapgSkeleton &sk){
+		if (sk.size() == 0)
+			return;
+
 		line(img, Point(sk[0].x(), sk[0].y()), Point(sk[1].x(), sk[1].y()), Scalar(0), 2);
 		line(img, Point(sk[1].x(), sk[1].y()), Point(sk[2].x(), sk[2].y()), Scalar(0), 2);
 		line(img, Point(sk[3].x(), sk[3].y()), Point(sk[4].x(), sk[4].y()), Scalar(0), 2);
@@ -3993,10 +3996,10 @@ namespace zc{
 			validBgMsk_dbg.setTo(Scalar(0, 255, 0), bgMoveMask);
 			validBgMsk_dbg.setTo(Scalar(255, 0, 0), bgMoveMaskDilate - bgMoveMask);
 
-			putText(validBgMsk_dbg, "ratioLow: " + to_string((double)bgMoveRatioLow), Point(0, 30), FONT_HERSHEY_PLAIN, 2, Scalar(0, 0, 255), 2);
-			putText(validBgMsk_dbg, "ratioHigh: " + to_string((double)bgMoveRatioHigh), Point(0, 60), FONT_HERSHEY_PLAIN, 2, Scalar(0, 0, 255), 2);
-			putText(validBgMsk_dbg, "ratioWs: " + to_string((double)bgMoveRatioWscale), Point(0, 90), FONT_HERSHEY_PLAIN, 2, Scalar(0, 0, 255), 2);
-			putText(validBgMsk_dbg, "ratioWs_R: " + to_string((double)bgMoveRatioWscale_real), Point(0, 120), FONT_HERSHEY_PLAIN, 2, Scalar(0, 0, 255), 2);
+			putText(validBgMsk_dbg, "ratioLow: " + to_string((long double)bgMoveRatioLow), Point(0, 30), FONT_HERSHEY_PLAIN, 2, Scalar(0, 0, 255), 2);
+			putText(validBgMsk_dbg, "ratioHigh: " + to_string((long double)bgMoveRatioHigh), Point(0, 60), FONT_HERSHEY_PLAIN, 2, Scalar(0, 0, 255), 2);
+			putText(validBgMsk_dbg, "ratioWs: " + to_string((long double)bgMoveRatioWscale), Point(0, 90), FONT_HERSHEY_PLAIN, 2, Scalar(0, 0, 255), 2);
+			putText(validBgMsk_dbg, "ratioWs_R: " + to_string((long double)bgMoveRatioWscale_real), Point(0, 120), FONT_HERSHEY_PLAIN, 2, Scalar(0, 0, 255), 2);
 
 			imshow("validBgMsk_dbg", validBgMsk_dbg);
 		}
@@ -4129,7 +4132,7 @@ namespace zc{
 	}//getFgMaskVec
 
 
-	void debugDrawHumVec(const Mat &dmat, const vector<Mat> &fgMskVec, const vector<HumanObj> &humVec, int fid /*= -1*/, bool debugWrite /*= false*/){
+	void debugDrawHumVec(const Mat &dmat, const vector<Mat> &fgMskVec, vector<HumanObj> &humVec, int fid /*= -1*/, bool debugWrite /*= false*/){
 		Mat humMsk = zc::getHumansMask(fgMskVec, dmat.size());
 		// 			QtFont font = fontQt("Times");
 		// 			cv::addText(humMsk, "some-text", { 55, 55 ), font);
@@ -4144,6 +4147,8 @@ namespace zc{
 
 		putText(humMsk彩色, "humVec.size: " + to_string((long long)humVec.size()), Point(0, 50),
 			FONT_HERSHEY_PLAIN, 1, Scalar(255, 255, 255));
+
+		zc::drawSkeletons(humMsk彩色, humVec, -1);
 
 		imshow("humMsk-color", humMsk彩色);
 		if (debugWrite)
@@ -4292,7 +4297,7 @@ namespace zc{
 
 
 #ifdef CV_VERSION_EPOCH
-	const string featurePath = "../../feature";
+	const string featurePath = "./feature";
 	static BPRecognizer *bpr = nullptr;
 	CapgSkeleton calcSkeleton( const Mat &dmat, const Mat &fgMsk ){
 		Mat dm32s;
@@ -4991,6 +4996,16 @@ namespace zc{
 
 
 	cv::Mat largeContPassFilter(const Mat &mask, LCPF_MODE mode /*= CONT_LENGTH*/, int contSizeThresh /*= 10*/){
+#if 0	//debug-only
+		if (countNonZero(mask)){
+			int dummy = 0;
+			//测试 findContours 在 orbbec_skeleton 环境下出错:
+			vector<vector<Point>> contours;
+			findContours(mask.clone(), contours, RETR_EXTERNAL, CHAIN_APPROX_NONE);
+			dummy = 0;
+		}
+#endif	//debug-only
+
 		Mat res = mask.clone();
 
 		vector<vector<Point>> contours;

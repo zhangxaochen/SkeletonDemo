@@ -385,7 +385,7 @@ namespace zc{
 
 	//@brief 调试绘制最终得到的 fgMskVec, humVec
 	//@param debugWrite: if true, 写文件!
-	void debugDrawHumVec(const Mat &dmat, const vector<Mat> &fgMskVec, const vector<HumanObj> &humVec, int fid = -1, bool debugWrite = false);
+	void debugDrawHumVec(const Mat &dmat, const vector<Mat> &fgMskVec, vector<HumanObj> &humVec, int fid = -1, bool debugWrite = false);
 
 	class HumanObj
 	{

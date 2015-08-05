@@ -22,7 +22,7 @@ int g_ImgIndex = 0;
 #define CAPG_SKEL_VERSION_0_9 //对应 skeleton_test v0.9. 2015年6月30日23:59:18
 
 #undef CAPG_SKEL_VERSION_0_9
-#define CAPG_SKEL_VERSION_0_9_5	//增加方案二（限制增长mask），方案一增加后处理分割（by孙国飞）两种方法，三者对比测试
+#define CAPG_SKEL_VERSION_0_9_1	//增加方案二（限制增长mask），方案一增加后处理分割（by孙国飞）两种方法，三者对比测试
 
 //按空格，则手动播放：
 bool isManually = false;
@@ -167,11 +167,11 @@ void main(int argc, char **argv){
 	//oniFname = "E:/oni_data/oni132x64/zc-stand-wo-feet-qvga.oni";
 // 	oniFname = "E:/oni_data/oni132_orig/zc_indoor_stand.oni";
 	oniFname = "E:/oni_data/oni132_orig/zc_indoor_touch_panel.oni"; //人手触摸大平面板
-	oniFname = "E:/oni_data/oni132_orig/indoor-driver-noise.oni";	//对比测试 MS/primesense 驱动
+	//oniFname = "E:/oni_data/oni132_orig/indoor-driver-noise.oni";	//对比测试 MS/primesense 驱动
 	//oniFname = ""; //不行
 
 	xn::Player plyr;
-	//rc = ctx.OpenFileRecording(oniFname, plyr);
+	rc = ctx.OpenFileRecording(oniFname, plyr);
 	int frameOffset = std::stoi(argv[1]);
 	plyr.SeekToFrame("Depth1", frameOffset, XN_PLAYER_SEEK_SET);
 	plyr.SetRepeat(string(argv[2])=="true"); //放在 OpenFileRecording 之后才有效
@@ -739,7 +739,7 @@ void main(int argc, char **argv){
 		//必须： 更新 prevDmat
 		zc::setPrevDmat(dmat);
 
-#elif defined CAPG_SKEL_VERSION_0_9_5
+#elif defined CAPG_SKEL_VERSION_0_9_1
 		//---------------孙国飞头部种子点，初始化配置：
 		const char *sgfConfigFn = "d:/Users/zhangxaochen/Desktop/SenseKitSDK-0.1.4-20150424T043853Z-win32/samples/plugins/orbbec_skeleton/sgf_seed/config.txt";
 		const char *sgfTempl = "D:/Users/zhangxaochen/Desktop/SenseKitSDK-0.1.4-20150424T043853Z-win32/samples/plugins/orbbec_skeleton/sgf_seed/headtemplate.bmp";
@@ -753,7 +753,7 @@ void main(int argc, char **argv){
 		vector<Mat> fgMskVec = zc::getFgMaskVec(dmat, fid, ZC_DEBUG_LV1);
 
 		cout << "getFgMaskVec.ts: " << clock() - begt << endl;
-#endif //CAPG_SKEL_VERSION_0_9, 0_9_5
+#endif //CAPG_SKEL_VERSION_0_9, 0_9_1
 
 		begt = clock();
 		static vector<HumanObj> humVec;
@@ -762,6 +762,9 @@ void main(int argc, char **argv){
 
 		if (humVec.size())
 			int dummy = 0;
+#if 1
+		zc::debugDrawHumVec(dmat, fgMskVec, humVec);
+#else
 		Mat humMsk彩色 = zc::getHumansMask(dmat, humVec);
 		if (ZC_DEBUG_LV1){
 			putText(humMsk彩色, "fid: " + to_string((long long) fid), Point(0, 30), 
@@ -778,6 +781,7 @@ void main(int argc, char **argv){
 				imwrite("humMsk-color_" + std::to_string((long long)fid) + ".jpg", humMsk彩色);
 
 		}
+#endif
 
 		key = waitKey(isManually ? 0 : 1);
 		switch (key)
