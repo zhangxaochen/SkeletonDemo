@@ -7,7 +7,7 @@
 using namespace std;
 //using namespace zc;
 
-#define ZCDEBUG 01
+#define ZCDEBUG 00
 #define CAPG_SKEL_VERSION_0_1 //最初交付的代码版本
 
 #undef CAPG_SKEL_VERSION_0_1 //改用 v0.9. 2015年7月1日00:07:01
@@ -228,10 +228,12 @@ namespace sensekit { namespace plugins { namespace skeleton {
 			skeletonFrame->frame.skeletons = reinterpret_cast<sensekit_skeleton_t*>(&(skeletonFrame->frame_data));
 			skeletonFrame->frame.skeletonCount = SkeletonTracker::MAX_SKELETONS;
 
+#if 0	//original-demo
 			sensekit_skeleton_t& skeleton = skeletonFrame->frame.skeletons[0];
 			skeleton.trackingId = 1;
 			skeleton.status = SENSEKIT_SKELETON_STATUS_TRACKED;
 			skeleton.jointCount = SENSEKIT_MAX_JOINTS;
+#endif	//original-demo
 
 			//zhangxaochen:
 			static CoordinateMapper mapper = reader.stream<sensekit::DepthStream>().coordinateMapper();
@@ -293,29 +295,42 @@ namespace sensekit { namespace plugins { namespace skeleton {
 #ifdef CAPG_SKEL_VERSION_0_9_1
 			size_t humVecSz = humVec.size();
 			for (int i = 0; i < min(humVecSz, MAX_SKELETONS); i++){
-				HumanObj humObj = humVec[i];
-				CapgSkeleton sklt = humObj.getSkeleton();
-				int humId = humObj.getHumId();
-
 				sensekit_skeleton_t& skeleton = skeletonFrame->frame.skeletons[i];
-				skeleton.trackingId = humId;
-				skeleton.status = SENSEKIT_SKELETON_STATUS_TRACKED;
-				skeleton.jointCount = SENSEKIT_MAX_JOINTS;
 
-				cout << "==================" << humId << endl;
-				for (size_t i = 0; i < 8; i++){
-					skeleton.joints[i].status = SENSEKIT_JOINT_STATUS_TRACKED;
-					skeleton.joints[i].jointType = static_cast<sensekit_joint_type>(i + 1); //e.g, SENSEKIT_JOINT_TYPE_LEFT_SHOULDER
-					Vector3f pt = { sklt[i].x()*scaleFactor, sklt[i].y()*scaleFactor, sklt[i].z()*1.f };
-					cout << "[ " << pt.x << ", " << pt.y << ", " << pt.z << " ]" << endl;
+				bool isIdFound = false;
+				for (int k = 0; k < humVecSz; k++){
+					HumanObj humObj = humVec[k];
+					CapgSkeleton sklt = humObj.getSkeleton();
+					int humId = humObj.getHumId();
 
-					//pt in world-scale-coord
-					Vector3f ptw = mapper.convert_depth_to_world(pt);
-					cout << "ws: [ " << ptw.x << ", " << ptw.y << ", " << ptw.z << " ]" << endl;
+					if (i == humId){
+						isIdFound = true;
 
-					//skeleton.joints[i].position = *(sensekit_vector3f_t*)(
-					skeleton.joints[i].position = *reinterpret_cast<sensekit_vector3f_t*>(&ptw);
-				}
+						skeleton.trackingId = humId;
+						skeleton.status = SENSEKIT_SKELETON_STATUS_TRACKED;
+						skeleton.jointCount = SENSEKIT_MAX_JOINTS;
+
+						cout << "==================" << humId << endl;
+						for (size_t i = 0; i < 8; i++){
+							skeleton.joints[i].status = SENSEKIT_JOINT_STATUS_TRACKED;
+							skeleton.joints[i].jointType = static_cast<sensekit_joint_type>(i + 1); //e.g, SENSEKIT_JOINT_TYPE_LEFT_SHOULDER
+							//Vector3f pt = { sklt[i].x()*scaleFactor, sklt[i].y()*scaleFactor, sklt[i].z()*1.f };
+							Vector3f pt(sklt[i].x() * scaleFactor, sklt[i].y() * scaleFactor, sklt[i].z() * 1.f);
+							cout << "[ " << pt.x << ", " << pt.y << ", " << pt.z << " ]" << endl;
+
+							//pt in world-scale-coord
+							Vector3f ptw = mapper.convert_depth_to_world(pt);
+							cout << "ws: [ " << ptw.x << ", " << ptw.y << ", " << ptw.z << " ]" << endl;
+
+							//skeleton.joints[i].position = *(sensekit_vector3f_t*)(
+							skeleton.joints[i].position = *reinterpret_cast<sensekit_vector3f_t*>(&ptw);
+						}
+
+						break;
+					}
+				}//for, k < humVecSz;
+				if (!isIdFound)
+					skeleton.status = SENSEKIT_SKELETON_STATUS_NOT_TRACKED;
 			}
 #endif // CAPG_SKEL_VERSION_0_9_1
 

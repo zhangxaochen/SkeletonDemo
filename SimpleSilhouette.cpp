@@ -4,6 +4,9 @@
 #include <algorithm>
 #include <functional>
 
+//2015年8月15日16:12:27
+#define DBG_STD_COUT 00
+
 //2015年7月22日13:33:53， 目前两个方案， 1. 无限制增长+SGF两种后处理； 2. 限制增长mask
 #define SOLUTION_1 0	//若0，目前就是m2
 #define M1_E1 0	//若0，目前就是 m1-e2
@@ -747,7 +750,8 @@ namespace zc{
 		if(countNonZero(sdsMat == UCHAR_MAX))
 			findNonZero(sdsMat == UCHAR_MAX, sdPtsVec);
 		if (debugDraw){
-			cout << "sdPtsVec.size: " << sdPtsVec.size()
+			if (DBG_STD_COUT)
+				cout << "sdPtsVec.size: " << sdPtsVec.size()
 				<< ", .ts: " << clock() - begt << endl;
 		}
 
@@ -2187,7 +2191,7 @@ namespace zc{
 		static float sumt = 0;
 		fcnt++;
 		sumt += clock() - begt;
-		cout << "calcPotentialMask.ts: " << sumt / fcnt << endl;	//1.21ms
+		if(DBG_STD_COUT) cout << "calcPotentialMask.ts: " << sumt / fcnt << endl;	//1.21ms
 
 #endif
 
@@ -2255,7 +2259,8 @@ namespace zc{
 				static float sumt = 0;
 				fcnt++;
 				sumt += clock() - begt;
-				cout << "getRealFgMaskVec.ts: " << sumt / fcnt << endl;	//1.21ms
+				if (DBG_STD_COUT)
+					cout << "getRealFgMaskVec.ts: " << sumt / fcnt << endl;	//1.21ms
 
 				Mat tmpFgMsk = getHumansMask(noMoveFgMskVec, dmat.size());
 				imshow("getRealFgMaskVec", tmpFgMsk);
@@ -3893,7 +3898,7 @@ namespace zc{
 #endif //N种初步增长方法
 		fgMskVec = zc::bboxBatchFilter(dmat, fgMskVec);
 
-		cout << "bbb.findFgMasksUseBbox.ts: " << clock() - begt << endl;
+		if (DBG_STD_COUT) cout << "bbb.findFgMasksUseBbox.ts: " << clock() - begt << endl;
 		if (debugDraw){
 			Mat btmp = zc::getHumansMask(fgMskVec, dmat.size());
 			string txt = "fgMskVec.size: " + to_string((long long)fgMskVec.size());
@@ -3989,7 +3994,8 @@ namespace zc{
 			static float sumt = 0;
 			fcnt++;
 			sumt += clock() - begt;
-			cout << "bgMoveRatioWscale_real.ts: " << sumt / fcnt << endl;	//0.1ms
+			if (DBG_STD_COUT) 
+				cout << "bgMoveRatioWscale_real.ts: " << sumt / fcnt << endl;	//0.1ms
 
 			Mat validBgMsk_dbg = validBgMsk.clone();
 			cvtColor(validBgMsk_dbg, validBgMsk_dbg, COLOR_GRAY2BGR);
@@ -4032,7 +4038,7 @@ namespace zc{
 		//C.不动点跟踪，使前景补全、稳定：
 		begt = clock();
 		fgMskVec = zc::trackingNoMove(dmat, prevMaskVec, fgMskVec, noMoveThresh, fgMskMotion, debugDraw);
-		cout << "ccc.trackingNoMove.ts: " << clock() - begt << endl;
+		if(DBG_STD_COUT) cout << "ccc.trackingNoMove.ts: " << clock() - begt << endl;
 		if (debugDraw){
 			Mat ctmp = zc::getHumansMask(fgMskVec, dmat.size());
 			string txt = "fgMskVec.size: " + to_string((long long)fgMskVec.size());
@@ -4050,10 +4056,13 @@ namespace zc{
 		//---------------目前使用sep-xz：
 		int armLength = 800; //单臂前举伸直长度上限
 		fgMskVec = zc::separateMasksXZview(dmat, fgMskVec, armLength, debugDraw);
-		cout << "ddd.separateMasksXZview.ts: " << clock() - begt << endl;
+		if (DBG_STD_COUT) 
+			cout << "ddd.separateMasksXZview.ts: " << clock() - begt << endl;
+
 		static int tSumt = 0;
 		tSumt += (clock() - begttotal);
-		cout << "find+tracking.rate: " << 1.*tSumt / (frameCnt + 1) << ", " << frameCnt << endl;
+		if (DBG_STD_COUT) 
+			cout << "find+tracking.rate: " << 1.*tSumt / (frameCnt + 1) << ", " << frameCnt << endl;
 
 		if (debugDraw){
 			Mat dtmp = zc::getHumansMask(fgMskVec, dmat.size());
