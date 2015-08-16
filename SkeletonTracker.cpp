@@ -218,7 +218,9 @@ namespace sensekit { namespace plugins { namespace skeleton {
 		sensekit_frame_index_t fid = depthFrame.frameIndex();
 		vector<Mat> fgMskVec = zc::getFgMaskVec(dmat, fid, ZCDEBUG);
 		zc::getHumanObjVec(dmat, fgMskVec, humVec);
-		zc::debugDrawHumVec(dmat, fgMskVec, humVec, -1);
+
+		bool debugWrite = false;
+		zc::debugDrawHumVec(dmat, fgMskVec, humVec, fid, debugWrite);
 #endif // CAPG_SKEL_VERSION_0_9_1
 
 		sensekit_skeletonframe_wrapper_t* skeletonFrame = m_skeletonStream->begin_write(depthFrame.frameIndex());
