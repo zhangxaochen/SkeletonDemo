@@ -12,8 +12,8 @@ using namespace cv;
 
 #define ZC_DEBUG_LV1 01	//显示关键结果图
 #define ZC_DEBUG_LV2 0	//显示某些中间结果图
-#define ZC_WRITE 0
-#define ZC_CLEAN 01
+#define ZC_WRITE 01		//输出关节结果到jpg文件
+#define ZC_CLEAN 01		//@deprecated, 后改用 CAPG_SKEL_VERSION_0_9 了
 
 #define CAPG_SKEL_VERSION_0_1 //最初交付的代码版本
 int g_ImgIndex = 0;
@@ -166,8 +166,11 @@ void main(int argc, char **argv){
 	// 	oniFname = "E:/oni_data/oni132x64/zc-stand-w-feet.oni";
 	//oniFname = "E:/oni_data/oni132x64/zc-stand-wo-feet-qvga.oni";
 // 	oniFname = "E:/oni_data/oni132_orig/zc_indoor_stand.oni";
-	oniFname = "E:/oni_data/oni132_orig/zc_indoor_touch_panel.oni"; //人手触摸大平面板
+	//oniFname = "E:/oni_data/oni132_orig/zc_indoor_touch_panel.oni"; //人手触摸大平面板
 	//oniFname = "E:/oni_data/oni132_orig/indoor-driver-noise.oni";	//对比测试 MS/primesense 驱动
+	oniFname = "E:/oni_data/oni@orbbec/格斗.oni";
+	oniFname = "E:/oni_data/oni@orbbec/飞机.oni";
+
 	//oniFname = ""; //不行
 
 	xn::Player plyr;
@@ -763,7 +766,8 @@ void main(int argc, char **argv){
 		if (humVec.size())
 			int dummy = 0;
 #if 1
-		zc::debugDrawHumVec(dmat, fgMskVec, humVec);
+		bool debugWrite = ZC_WRITE;
+		zc::debugDrawHumVec(dmat, fgMskVec, humVec, fid, debugWrite);
 #else
 		Mat humMsk彩色 = zc::getHumansMask(dmat, humVec);
 		if (ZC_DEBUG_LV1){
