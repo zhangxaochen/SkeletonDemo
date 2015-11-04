@@ -1295,6 +1295,13 @@ namespace zc{
 			line(img, Point(sk[7].x(), sk[7].y()),
 				Point((sk[8].x()+sk[11].x())/2, (sk[8].y()+sk[11].y())/2), Scalar(0), 2);
 		}
+
+		//zhangxaochen: 增加下肢关节绘制 //2015-11-2 21:00:43
+		line(img, Point(sk[8].x(), sk[8].y()), Point(sk[9].x(), sk[9].y()), Scalar(0), 2);
+		line(img, Point(sk[9].x(), sk[9].y()), Point(sk[10].x(), sk[10].y()), Scalar(0), 2);
+		line(img, Point(sk[11].x(), sk[11].y()), Point(sk[12].x(), sk[12].y()), Scalar(0), 2);
+		line(img, Point(sk[12].x(), sk[12].y()), Point(sk[13].x(), sk[13].y()), Scalar(0), 2);
+		
 	}//drawOneSkeleton
 
 	void drawSkeletons(Mat &img, const vector<CapgSkeleton> &sklts, int skltIdx){
