@@ -4334,7 +4334,7 @@ namespace zc{
 		IplImage cLabelMat = labelMat;
 
 		useErode = false;
-		usePre = false;
+		//usePre = false; //仍然改用true, 之前false可能因为之前的数据上false更稳定?不记得了	//2015-11-4 09:05:02
 		bpr->mergeJoint(&cLabelMat, &depthImg, sklt, useErode, usePre);
 
 		return sklt;
