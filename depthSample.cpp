@@ -6,7 +6,9 @@ map<BodyLabel, Color> DepthSample::_labelColorMap = map<BodyLabel, Color>();
 map<Color, BodyLabel> DepthSample::_colorLabelMap = map<Color, BodyLabel>();
 bool DepthSample::_similarMatrix [31][31] = {};
 
-string DepthSample::_rootPath = string("\\\\soso-pc\\RESULT\\");
+//string DepthSample::_rootPath = string("\\\\soso-pc\\RESULT\\");
+//---sunguofei 2015.11.10
+string DepthSample::_rootPath = string("");
 
 void DepthSample::createColorMap(){
 	_labelColorMap.clear();
@@ -189,7 +191,12 @@ void DepthSample::loadImage()
 	if(_depthImg || _labelImg) releaseImage();
 
 	string filename = _rootPath + _depthFileName;
-	IplImage* colorDepth = cvLoadImage(filename.data());
+    IplImage* colorDepth = cvLoadImage(filename.data());
+//     cvShowImage("depth",colorDepth);
+//     waitKey(0);
+    //---sunguofei 2015.11.11
+    //_depthImg = cvLoadImage(filename.data(),0);
+
 	if(colorDepth == 0){
 		ERROR_MSG(string("Cannot open image: ")+_depthFileName, 0);
 		return;
@@ -201,6 +208,8 @@ void DepthSample::loadImage()
 		releaseImage();
 		return;
 	}
+//     cvShowImage("color label",colorLabel);
+//     waitKey(0);
 
 	cv::RNG* rng = BPRecognizer::getRng();
 	int code = (*rng).uniform(0, 10);
@@ -211,12 +220,19 @@ void DepthSample::loadImage()
 	else if(code >= 3 && code <= 5)
 		_cut_y = (*rng).uniform((int)(colorDepth->height*0.7), (int)(colorDepth->height*0.9));
 	else _cut_y = (*rng).uniform((int)(colorDepth->height*0.9), colorDepth->height);
+    //---sunguofei 2015.11.11
+    //do not cut y
+    //_cut_y=colorDepth->height;
 
 	_depthImg = cvCreateImage(cvSize(colorDepth->width, colorDepth->height), IPL_DEPTH_32S, 1);
-	_labelImg = cvCreateImage(cvSize(colorLabel->width, colorLabel->height), IPL_DEPTH_8U, 1);
-	translateColorLabelImg(colorLabel);
-	normalColorDepthImg(colorDepth);
 
+    _labelImg = cvCreateImage(cvSize(colorLabel->width, colorLabel->height), IPL_DEPTH_8U, 1);
+	translateColorLabelImg(colorLabel);
+	//normalColorDepthImg(colorDepth);
+    normalColorDepthImg_r(colorDepth);
+
+
+    //---sunguofei 2015.11.11
 	for(int y=0; y<colorDepth->height; y++){
 		uchar* d_data = (uchar*)(colorDepth->imageData + y*colorDepth->widthStep);
 		unsigned int* nd_data = (unsigned int*)(_depthImg->imageData + y*_depthImg->widthStep);
@@ -359,14 +375,24 @@ void DepthSample::normalColorDepthImg(IplImage* dImg)
 	cv::RNG* rng = BPRecognizer::getRng();
 	for(int y=0; y<_cut_y; y++){
 		uchar* d_data = (uchar*)(dImg->imageData + y*dImg->widthStep);
-		unsigned int* nd_data = (unsigned int*)(_depthImg->imageData + y*_depthImg->widthStep);
+		//---sunguofei 2015.11.11
+        //unsigned short* d_data = (unsigned short*)(dImg->imageData + y*dImg->widthStep);
+        
+        unsigned int* nd_data = (unsigned int*)(_depthImg->imageData + y*_depthImg->widthStep);
 		for(int x=0; x<dImg->width; x++){
 			// b+256*g
 			nd_data[x] = (d_data[3*x] + 256*d_data[3*x+1] + 65536*d_data[3*x+2]);
+            //---sunguofei 2015.11.11
+            //nd_data[x]=d_data[x];
+            //if (nd_data[x]==65535)
+            //{
+            //    nd_data[x]=BACKGROUNG;
+            //}
+
 			if(nd_data[x]!=BACKGROUNG){
 				// shift depth
 				//nd_data[x] = nd_data[x]*2+400;
-				nd_data[x] = (nd_data[x] - _minDepth) * 2 + AlignDepth;
+				nd_data[x] = (nd_data[x] - _minDepth) * 2 + AlignDepth;  //---sunguofei 2015.11.11 no shift
 				// reduce sampling rate and add noise
 				nd_data[x] = ((int)(nd_data[x]/13))*13 + (*rng)(3);
 			}

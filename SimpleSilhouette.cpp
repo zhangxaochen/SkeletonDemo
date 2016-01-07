@@ -1280,6 +1280,20 @@ namespace zc{
 		if (sk.size() == 0)
 			return;
 
+        //sunguofei: calculate the length fron head to torse
+        double half_height=sqrt(pow(sk[6].x()-(sk[8].x()+sk[11].x())/2,2.0)+pow(sk[6].y()-(sk[8].y()+sk[11].y())/2,2.0));
+        double lu_leg_length=sqrt(pow(sk[8].x()-sk[9].x(),2.0)+pow(sk[8].y()-sk[9].y(),2.0));
+        double ll_leg_length=sqrt(pow(sk[9].x()-sk[10].x(),2.0)+pow(sk[9].y()-sk[10].y(),2.0));
+        double ru_leg_length=sqrt(pow(sk[11].x()-sk[12].x(),2.0)+pow(sk[11].y()-sk[12].y(),2.0));
+        double rl_leg_length=sqrt(pow(sk[12].x()-sk[13].x(),2.0)+pow(sk[12].y()-sk[13].y(),2.0));
+
+//         for (int i=0;i<14;++i)
+//         {
+//             circle(img, Point(sk[i].x(), sk[i].y()), 2, Scalar(0), 2);
+//         }
+        //circle(img, Point(sk[7].x(), sk[7].y()), 2, Scalar(0), 2);
+        //circle(img, Point(sk[6].x(), sk[6].y()), 4, Scalar(0), 2);
+        
 		line(img, Point(sk[0].x(), sk[0].y()), Point(sk[1].x(), sk[1].y()), Scalar(0), 2);
 		line(img, Point(sk[1].x(), sk[1].y()), Point(sk[2].x(), sk[2].y()), Scalar(0), 2);
 		line(img, Point(sk[3].x(), sk[3].y()), Point(sk[4].x(), sk[4].y()), Scalar(0), 2);
@@ -1289,19 +1303,76 @@ namespace zc{
 
 		circle(img, Point(sk[8].x(), sk[8].y()), 2, Scalar(0), 2);
 		circle(img, Point(sk[11].x(), sk[11].y()), 2, Scalar(0), 2);
+
 		if(sk[8].x()!=0&&sk[8].y()!=0&&sk[11].x()!=0&&sk[11].y()!=0)
 		{
 			line(img, Point(sk[8].x(), sk[8].y()), Point(sk[11].x(), sk[11].y()), Scalar(0), 2);
 			line(img, Point(sk[7].x(), sk[7].y()),
 				Point((sk[8].x()+sk[11].x())/2, (sk[8].y()+sk[11].y())/2), Scalar(0), 2);
 		}
+        
+        //draw the knees ---sunguofei 2015-11-5
+        double rate1=0.7,rate2=0.4;
+        if (half_height>0)
+        {
+            if (lu_leg_length+ll_leg_length<half_height*rate1 &&lu_leg_length<half_height*rate2)
+            {
+                Joint l_knee;
+                l_knee.x()=sk[8].x()+(sk[9].x()-sk[8].x())*(half_height/2)/lu_leg_length;
+                l_knee.y()=sk[8].y()+(sk[9].y()-sk[8].y())*(half_height/2)/lu_leg_length;
+                Joint l_foot;
+                l_foot.x()=l_knee.x();
+                l_foot.y()=l_knee.y()+(int)(half_height/2);
+
+                //draw
+                line(img, Point(sk[8].x(), sk[8].y()), Point(l_knee.x(), l_knee.y()), Scalar(0), 2);
+                circle(img, Point(l_knee.x(), l_knee.y()), 2, Scalar(0), 2);
+                line(img, Point(l_knee.x(), l_knee.y()), Point(l_foot.x(), l_foot.y()), Scalar(0), 2);
+            }
+            else
+            {
+                circle(img, Point(sk[9].x(), sk[9].y()), 2, Scalar(0), 2);
+                line(img, Point(sk[8].x(), sk[8].y()), Point(sk[9].x(), sk[9].y()), Scalar(0), 2);
+                line(img, Point(sk[9].x(), sk[9].y()), Point(sk[10].x(), sk[10].y()), Scalar(0), 2);
+            }
+            if (ru_leg_length+rl_leg_length<half_height*rate1 && ru_leg_length<half_height*rate2)
+            {
+                Joint r_knee;
+                r_knee.x()=sk[11].x()+(sk[12].x()-sk[11].x())*(half_height/2)/ru_leg_length;
+                r_knee.y()=sk[11].y()+(sk[12].y()-sk[11].y())*(half_height/2)/ru_leg_length;
+                Joint r_foot;
+                r_foot.x()=r_knee.x();
+                r_foot.y()=r_knee.y()+(int)(half_height/2);
+
+                //draw
+                line(img, Point(sk[11].x(), sk[11].y()), Point(r_knee.x(), r_knee.y()), Scalar(0), 2);
+                circle(img, Point(r_knee.x(), r_knee.y()), 2, Scalar(0), 2);
+                line(img, Point(r_knee.x(), r_knee.y()), Point(r_foot.x(), r_foot.y()), Scalar(0), 2);
+            }
+            else
+            {
+                circle(img, Point(sk[12].x(), sk[12].y()), 2, Scalar(0), 2);
+                line(img, Point(sk[11].x(), sk[11].y()), Point(sk[12].x(), sk[12].y()), Scalar(0), 2);
+                line(img, Point(sk[12].x(), sk[12].y()), Point(sk[13].x(), sk[13].y()), Scalar(0), 2);
+            }
+        }
+        /*
+        circle(img, Point(sk[9].x(), sk[9].y()), 2, Scalar(0), 2);
+        circle(img, Point(sk[12].x(), sk[12].y()), 2, Scalar(0), 2);
 
 		//zhangxaochen: 增加下肢关节绘制 //2015-11-2 21:00:43
 		line(img, Point(sk[8].x(), sk[8].y()), Point(sk[9].x(), sk[9].y()), Scalar(0), 2);
 		line(img, Point(sk[9].x(), sk[9].y()), Point(sk[10].x(), sk[10].y()), Scalar(0), 2);
 		line(img, Point(sk[11].x(), sk[11].y()), Point(sk[12].x(), sk[12].y()), Scalar(0), 2);
 		line(img, Point(sk[12].x(), sk[12].y()), Point(sk[13].x(), sk[13].y()), Scalar(0), 2);
-		
+        */
+
+        //draw the foot ---sunguofei
+// 		if (sk.size()==16)
+// 		{
+//             line(img, Point(sk[10].x(), sk[10].y()), Point(sk[14].x(), sk[14].y()), Scalar(0), 2);
+//             line(img, Point(sk[13].x(), sk[13].y()), Point(sk[15].x(), sk[15].y()), Scalar(0), 2);
+// 		}
 	}//drawOneSkeleton
 
 	void drawSkeletons(Mat &img, const vector<CapgSkeleton> &sklts, int skltIdx){
@@ -4318,24 +4389,37 @@ namespace zc{
 	CapgSkeleton calcSkeleton( const Mat &dmat, const Mat &fgMsk ){
 		Mat dm32s;
 		dmat.convertTo(dm32s, CV_32SC1);
+        dm32s=dm32s*(329.0/262.5);//change depth because the different focal length between training data and kinect data
 		//背景填充最大值，所以前景反而看起来黑色：
-		dm32s.setTo(INT_MAX, fgMsk==0);
+		//dm32s.setTo(INT_MAX, fgMsk==0);
+        dm32s.setTo(0xffffffu, fgMsk==0);
 
 		IplImage depthImg = dm32s;
 		bool useDense = false,
 			useErode = false, 
-			usePre = true;
+			//usePre = true;
+            usePre = false;
 
 		if(bpr == nullptr)
+        {
 			bpr = getBprAndLoadFeature(featurePath);
+            //bpr->load_node_ojr("E:/TrainData2Use");
+        }
 
 		CapgSkeleton sklt;
 		Mat labelMat = bpr->predict(&depthImg, nullptr, useDense, usePre);
 		IplImage cLabelMat = labelMat;
 
+        //show label----sunguofei
+        Mat colorLabel=label_gray2rgb(labelMat);
+        imshow("color label",colorLabel);
 		useErode = false;
+        //useErode = true;
 		//usePre = false; //仍然改用true, 之前false可能因为之前的数据上false更稳定?不记得了	//2015-11-4 09:05:02
-		bpr->mergeJoint(&cLabelMat, &depthImg, sklt, useErode, usePre);
+		//bpr->mergeJoint(&cLabelMat, &depthImg, sklt, useErode, usePre);
+        //---sunguofei 2015.11.16
+        bpr->mergeJoint_meanshift(&cLabelMat,dm32s,sklt);
+        //bpr->offsetJoint_meanshift(sklt);
 
 		return sklt;
 	}//calcSkeleton

@@ -7,7 +7,7 @@
 #define VERY_LARGE_POSITIVE 0xffffff
 #define BACKGROUNG 0xffffffu
 
-#define DepthModify 2000
+#define DepthModify 3000
 
 //***************************
 //** DepthFeature **

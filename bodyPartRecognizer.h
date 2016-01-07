@@ -10,9 +10,12 @@
 #include "depthSample.h"
 #include "depthFeature.h"
 #include <list>
+#include <map>
+#include <iostream>
 #include "denseDefine.h"
 #include "CapgSkeleton.h"
 #include "Macros.h"
+#include "MeanShift.h"
 //#include <XnOS.h>
 
 extern int g_ImgIndex;
@@ -84,7 +87,7 @@ struct BPRecogPara
 	int merge_flag; // merge flag
 
 	BPRecogPara(){
-		tree_depth = 20; min_sample_count = 10; tree_num = 5;
+		tree_depth = 30; min_sample_count = 10; tree_num = 5;
 		feature_type = DEPTH_FEATURE_GHALF;
 		feature_high_bound = 60;
 		img_per_tree = 1000;
@@ -92,6 +95,14 @@ struct BPRecogPara
 		theta_per_tree = 1500;
 		node_active_var = 300;
 		merge_flag = Leg_Merge | Arm_Merge;
+//         tree_depth = 20; min_sample_count = 10; tree_num = 5;
+//         feature_type = DEPTH_FEATURE_GHALF;
+//         feature_high_bound = 60;
+//         img_per_tree = 1000;
+//         pixel_per_img = 100;
+//         theta_per_tree = 1500;
+//         node_active_var = 300;
+//         merge_flag = 0;
 	}
 
 	BPRecogPara(BPRecogPara& para){
@@ -149,7 +160,7 @@ protected:
 
 	void rebuildValueMat();
 
-	CvDTreeNode* predict(IplImage* img, CvPoint pixel, vector<DepthFeature*>& fset) const;
+	CvDTreeNode* predict(IplImage* img, CvPoint pixel, vector<DepthFeature*>& fset,string& s) const;
 
 	BPRecognizer* _recognizer;
 
@@ -188,6 +199,9 @@ public:
 			_testSamples = testGenerator;
 	}
 
+    //---sunguofei 2015.11.10
+    bool train();
+
 	void test(bool save = false);
 	void testRuntime(bool save = false);
 
@@ -195,6 +209,13 @@ public:
 
 	void mergeJoint(IplImage* labelImg, IplImage* depthImg, CapgSkeleton& sklt,
 		bool useErode = true, bool usePre = true);
+
+    //---sunguofei 2015.12.9
+    void load_node_ojr(string path);
+    //---sunguofei 2015.11.16
+    void mergeJoint_meanshift(IplImage* labelImg, const Mat& depthImg, CapgSkeleton& sklt);
+    //---sunguofei 2015.12.10
+    void offsetJoint_meanshift(CapgSkeleton& sklt);
 
 	void predictAndMergeJoint(IplImage* depthImg, CapgSkeleton& sklt, IplImage* maskImg = 0, bool usePre = false, bool useErode = true,bool showPic=false);
 // 	{
@@ -300,6 +321,10 @@ protected:
 	vector<BPRTree*> _forest;
 
 	CapgSkeleton _skeleton;
+    //---sunguofei 2015.11.16
+    CapgSkeleton joints;
+    vector<vector<double>> joints_3d;
+
 	vector<CvPoint> _searchWin;
 	CvPoint _uniSearchStart;
 	CvPoint _uniSearchEnd;
@@ -333,6 +358,15 @@ protected:
 	int _erodeWin;
 
 	int _predictStep;
+
+    //---sunguofei 2015.11.16
+    vector<Mat> weight_mat;
+    //2015.11.18
+    vector<Mat> dis_weight_mat;
+    //2015.12.9
+    map<string,vector<vector<int>>> node_ojr[5];
+    vector<vector<double>> offset_result[18];
+    vector<double> offset_weight[18];
 
 private:
 	ushort* _denseRoot;

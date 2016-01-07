@@ -140,6 +140,8 @@ void BPRTree::rebuildValueMat()
 			_curFeatures.push_back(make_pair(f, false));
 		}
 	}
+    //the above is all about depth feature, add new features if you want using _curFeatures.push_back() ---sunguofei 2015.11.9
+
 	rTheta.clear();
 	rTheta.resize(0);
 
@@ -303,14 +305,14 @@ void BPRTreeBestSplitFinder::join(BPRTreeBestSplitFinder& rhs)
 }
 
 CvDTreeNode* BPRTree::predict(IplImage* img, CvPoint pixel,
-							  vector<DepthFeature*>& fset) const
+							  vector<DepthFeature*>& fset, string& s) const
 {
+    s="";
 	int i;
 	CvDTreeNode* node = root;
 
 	if( !node )
 		CV_Error( CV_StsError, "The tree has not been trained yet" );
-
 	while( node->left )
 	{
 		CvDTreeSplit* split = node->split;
@@ -319,7 +321,8 @@ CvDTreeNode* BPRTree::predict(IplImage* img, CvPoint pixel,
 		float val = fset[i]->getValue(img, pixel);
 		dir = val <= split->ord.c ? -1 : 1;
 
-		node = dir < 0 ? node->left : node->right;
+        node = dir < 0 ? node->left : node->right;
+        s = dir < 0 ? s+"0" : s+"1";
 	}
 
 	return node;

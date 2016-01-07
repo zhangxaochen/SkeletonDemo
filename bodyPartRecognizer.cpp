@@ -48,6 +48,7 @@ BPRecognizer::BPRecognizer()
 	_preErode = 0;
 
 	_predictStep = 2;
+    //_predictStep = 1;
 
 	clearPre();
 
@@ -160,6 +161,17 @@ IplImage* BPRecognizer::predict(IplImage* depthImg, IplImage* maskImg, bool useD
 	int twinTopCount = 0;
 	int spyCount = 0;
 
+    //---sunguofei 2015.11.16
+    weight_mat.clear();
+    weight_mat.resize(31);
+    dis_weight_mat.clear();
+    dis_weight_mat.resize(31);
+    for (int i=0;i<31;++i)
+    {
+        weight_mat[i]=Mat::zeros(depthImg->height,depthImg->width,CV_32F);
+        dis_weight_mat[i]=Mat::zeros(depthImg->height,depthImg->width,CV_32F);
+    }
+
 	for(int y=0; y<depthImg->height; y++){
 		unsigned int* d_data = (unsigned int*)(depthImg->imageData + y*depthImg->widthStep);
 		BodyLabel* l_data = (BodyLabel*)(_curLabelImg->imageData + y*_curLabelImg->widthStep);
@@ -168,6 +180,8 @@ IplImage* BPRecognizer::predict(IplImage* depthImg, IplImage* maskImg, bool useD
 		BodyLabel* pre_data = _preAvailable && usePre ? (BodyLabel*)(_preLabelImg->imageData + y*_preLabelImg->widthStep) : 0;
 		uchar* e_data = _preAvailable ? (uchar*)(_preErode->imageData + y*_preErode->widthStep) : 0;
 		for(int x=0; x<depthImg->width; x++){
+            //---sunguofei 2015.11.18
+
 			BodyLabel max_label = BodyLabel_Unknown;
 			if(d_data[x] >= BACKGROUNG){
 				max_label = BodyLabel_Background;
@@ -202,12 +216,34 @@ CopyPre:
 							vector<DepthFeature*>& fset = *_features[treeIdx];
 							int fcount = fset.size();
 							BPRTree* tree = _forest[treeIdx];
-							CvDTreeNode* predicted_node = tree->predict(depthImg, cvPoint(x, y), fset);
+                            string s;
+							CvDTreeNode* predicted_node = tree->predict(depthImg, cvPoint(x, y), fset, s);
 							class_idx = predicted_node->value;
 						}
 						if(class_idx == pre_data[x]){
 							max_label = class_idx;
 							copyPreCount++;
+
+                            //---sunguofei 2015.11.16
+                            weight_mat[class_idx].at<float>(y,x) = 1.0;
+                            //2015.11.18
+                            if (dis_weight_mat[class_idx].at<float>(y,x)==0)
+                            {
+                                float weight=500;
+                                if (joints.size()==31)
+                                {
+                                    if (x==joints[class_idx].x()&&y==joints[class_idx].y())
+                                    {
+                                        dis_weight_mat[class_idx].at<float>(y,x)=weight;
+                                    }
+                                    else
+                                    {
+                                        float dis=sqrt(pow(joints[class_idx].x()-x,2.0)+pow(joints[class_idx].y()-y,2.0));
+                                        dis_weight_mat[class_idx].at<float>(y,x)=weight/dis;
+                                    }
+                                }
+                            }
+
 						}else{
 							nvotes = ++votes[class_idx];
 							if(nvotes==1) voteParts.push_back(class_idx);
@@ -217,6 +253,27 @@ CopyPre:
 							}
 							startTreeIdx = 1;
 							spyCount++;
+
+                            //---sunguofei 2015.11.16
+                            weight_mat[class_idx].at<float>(y,x) += 1.0/_treeNum;
+                            //2015.11.18
+                            if (dis_weight_mat[class_idx].at<float>(y,x)==0)
+                            {
+                                float weight=500;
+                                if (joints.size()==31)
+                                {
+                                    if (x==joints[class_idx].x()&&y==joints[class_idx].y())
+                                    {
+                                        dis_weight_mat[class_idx].at<float>(y,x)=weight;
+                                    }
+                                    else
+                                    {
+                                        float dis=sqrt(pow(joints[class_idx].x()-x,2.0)+pow(joints[class_idx].y()-y,2.0));
+                                        dis_weight_mat[class_idx].at<float>(y,x)=weight*exp(-(dis*dis) / (50));//distance weight is based on the gauss kernel
+                                    }
+                                }
+                            }
+
 							goto PredicActually;
 						}
 
@@ -225,6 +282,9 @@ CopyPre:
 PredicActually:
 						// predict using random forest
 						actualPredict++;
+                        //---sunguofei 2015.12.10
+                        vector<string> leaf_id(_treeNum);
+                        vector<int> leaf_value(_treeNum);
 						for(int i=startTreeIdx; i<_treeNum; i++){
 							if(useDense){
 								class_idx = predicDense(depthImg, cvPoint(x, y), i);
@@ -232,8 +292,70 @@ PredicActually:
 								vector<DepthFeature*>& fset = *_features[i];
 								int fcount = fset.size();
 								BPRTree* tree = _forest[i];
-								CvDTreeNode* predicted_node = tree->predict(depthImg, cvPoint(x, y), fset);
+                                string s;
+								CvDTreeNode* predicted_node = tree->predict(depthImg, cvPoint(x, y), fset, s);
 								class_idx = predicted_node->value;
+
+                                //---sunguofei 2015.12.10
+                                leaf_id[i]=s;leaf_value[i]=class_idx;
+//                                 if (s=="11111111100"&&i==4)
+//                                 {
+//                                     cout<<s<<endl;
+//                                 }
+                               /*
+                                map<string,vector<vector<int>>>::iterator it;
+                                it=node_ojr[i].find(s);
+                                if (it!=node_ojr[i].end())
+                                {
+                                    double p_x,p_y,p_z;
+                                    p_z=d_data[x]*262.5/329;
+                                    p_x=(159.5-x)*p_z/262.5;
+                                    p_y=(119.5-y)*p_z/262.5;
+                                    for (int j=0;j<18;++j)
+                                    {
+                                        if (it->second[j][0]>50)
+                                        {
+                                            offset_weight[j].push_back(it->second[j][0]);
+                                            vector<double> tmp(3);
+                                            tmp[0]=p_x+it->second[j][1];tmp[1]=p_y+it->second[j][2];tmp[2]=p_z+it->second[j][3];
+                                            if (j==13 && tmp[1]<0)
+                                            {
+                                                int xxxxxxx=0;
+                                            }
+                                            //if(i==0)
+                                            offset_result[j].push_back(tmp);
+                                        }
+                                        if (it->second[j][4]>50)
+                                        {
+                                            offset_weight[j].push_back(it->second[j][4]);
+                                            vector<double> tmp(3);
+                                            tmp[0]=p_x+it->second[j][5];tmp[1]=p_y+it->second[j][6];tmp[2]=p_z+it->second[j][7];
+                                            //if(i==0)
+                                            offset_result[j].push_back(tmp);
+                                        }
+                                    }
+                                }
+                                */
+                                //---sunguofei 2015.11.16
+                                weight_mat[class_idx].at<float>(y,x) += 1.0/_treeNum;
+                                //2015.11.18
+                                if (dis_weight_mat[class_idx].at<float>(y,x)==0)
+                                {
+                                    float weight=500;
+                                    if (joints.size()==31)
+                                    {
+                                        if (x==joints[class_idx].x()&&y==joints[class_idx].y())
+                                        {
+                                            dis_weight_mat[class_idx].at<float>(y,x)=weight;
+                                        }
+                                        else
+                                        {
+                                            float dis=sqrt(pow(joints[class_idx].x()-x,2.0)+pow(joints[class_idx].y()-y,2.0));
+                                            dis_weight_mat[class_idx].at<float>(y,x)=weight*exp(-(dis*dis) / (50));
+                                        }
+                                    }
+                                }
+
 							}
 							nvotes = ++votes[class_idx];
 							if(nvotes==1) voteParts.push_back(class_idx);
@@ -263,10 +385,46 @@ PredicActually:
 								}
 								twinTopCount++;
 							}
+                            //---sunguofei 2015.12.10
+                            for (int i=0;i<leaf_id.size();++i)
+                            {
+                                if (leaf_value[i]==max_label)
+                                {
+                                    map<string,vector<vector<int>>>::iterator it;
+                                    it=node_ojr[i].find(leaf_id[i]);
+                                    if (it!=node_ojr[i].end())
+                                    {
+                                        double p_x,p_y,p_z;
+                                        p_z=d_data[x]*262.5/329;
+                                        p_x=(-159.5+x)*p_z/262.5;
+                                        p_y=(119.5-y)*p_z/262.5;
+                                        for (int j=0;j<18;++j)
+                                        {
+                                            if (it->second[j][0]>30)
+                                            {
+                                                offset_weight[j].push_back((it->second[j][0])*pow(p_z/1000.0,2.0));
+                                                vector<double> tmp(3);
+                                                tmp[0]=p_x+it->second[j][1];tmp[1]=p_y+it->second[j][2];tmp[2]=p_z+it->second[j][3];
+                                                offset_result[j].push_back(tmp);
+                                            }
+                                            
+                                            if (it->second[j][4]>30)
+                                            {
+                                                offset_weight[j].push_back((it->second[j][4])*pow(p_z/1000.0,2.0));
+                                                vector<double> tmp(3);
+                                                tmp[0]=p_x+it->second[j][5];tmp[1]=p_y+it->second[j][6];tmp[2]=p_z+it->second[j][7];
+                                                offset_result[j].push_back(tmp);
+                                            }
+                                            
+                                        }
+                                    }
+                                }
+                            }
 						}else if(max_vote < halfVote){
 							max_label = BodyLabel_Unknown;
 							unknownCount++;
 						}
+                        //---sunguofei 2015.12.10
 					}
 
 				}else{
@@ -293,6 +451,304 @@ PredicActually:
 	PLAIN_MSG("-- Predict End", _moduleID);
 
 	return _curLabelImg;
+}
+//---sunguofei 2015.12.9
+void BPRecognizer::load_node_ojr(string path)
+{
+    for (int i=0;i<5;++i)
+    {
+        ifstream f_in;
+        string file_path=path+"/meanshift_result"+string(1,'0'+i)+".txt";
+        f_in.open(file_path);
+        string s;
+        f_in>>s;
+        while (s!="end")
+        {
+            string node_id=s;
+            vector<vector<int>> node_value;
+            for (int j=0;j<18;++j)
+            {
+                f_in>>s;
+                int joint_id;f_in>>joint_id;
+                vector<int> joint_offset(8);
+                for (int k=0;k<8;++k)
+                {
+                    f_in>>joint_offset[k];
+                }
+                node_value.push_back(joint_offset);
+            }
+            node_ojr[i].insert(map<string,vector<vector<int>>>::value_type(node_id,node_value));
+            f_in>>s;
+        }
+        f_in.close();
+    }
+}
+//---sunguofei 2015.11.16
+void BPRecognizer::mergeJoint_meanshift(IplImage* labelImg, const Mat& depthImg, CapgSkeleton& sklt)
+{
+    vector<Joint> _joints;
+    Mat depth_draw=Mat::zeros(240,320,CV_8U);
+    //depthImg.convertTo(depth_draw,CV_8U,255/8000.0,0);
+    for (int i=0;i<31;++i)
+    {
+        float x=0,y=0,number=0;
+        for (int j=0;j<depthImg.rows;++j)
+        {
+            for (int k=0;k<depthImg.cols;++k)
+            {
+                float depth=depthImg.at<unsigned int>(j,k)*0.005;
+                weight_mat[i].at<float>(j,k) *=depth*depth;
+                float weight=weight_mat[i].at<float>(j,k);
+                x+=weight*k;
+                y+=weight*j;
+                if (weight!=0)
+                {
+                    number+=weight;
+                }
+            }
+        }
+        //check the probability map
+//         imshow("weight image",dis_weight_mat[i]);
+//         waitKey(0);
+        if (number!=0)
+        {
+            x=x/number;y=y/number;
+        }
+        //---sunguofei 2015.12.1
+        //new method.using gauss kernal --------not good!
+        /*
+        Mat new_weight=weight_mat[i];//+dis_weight_mat[i];
+        int valid_point_number=countNonZero(new_weight);
+        vector<vector<double>> points;
+        vector<double> weights;
+        points.resize(valid_point_number);
+        weights.resize(valid_point_number);
+        int count_tmp=0;
+        for (int j=0;j<new_weight.rows;++j)
+        {
+            for (int k=0;k<new_weight.cols;++k)
+            {
+                double wt=new_weight.at<float>(j,k);
+                if (wt!=0)
+                {
+                    vector<double> pt;pt.push_back(k);pt.push_back(j);
+                    weights[count_tmp]=wt;
+                    points[count_tmp]=pt;
+                    ++count_tmp;
+                }
+            }
+        }
+        vector<double> s_p;s_p.push_back(x);s_p.push_back(y);
+        MeanShift* ms=new MeanShift();
+        vector<double> shifted_point=ms->shift_point(s_p,points,weights,400);
+        Joint center;
+        center.x()=shifted_point[0];center.y()=shifted_point[1];
+        center.z()=depthImg.at<unsigned int>(center.y(),center.x());
+        //circle(depth_draw,center,2,255);
+        _joints.push_back(center);
+        */
+
+        //intial window size and window location
+        //method 1: using the average of label   ---not good!
+        
+        int window_size=50;
+        int rate=10;
+        Rect window = Rect(max(int(x)-window_size/2,0),max(int(y)-window_size/2,0),window_size,window_size);
+        Rect window1;
+        if (joints.size()==31)
+        {
+            //check label point number in the window. If too small, re-initialize
+            window1 = Rect(max(joints[i].x()-window_size/2,0),max(joints[i].y()-window_size/2,0),window_size,window_size);
+            Rect roi;
+            roi.x=window1.x;roi.y=window1.y;
+            roi.width=min(window_size,depthImg.cols-1-window1.x);
+            roi.height=min(window_size,depthImg.rows-1-window1.y);
+            int label_count=countNonZero(weight_mat[i]);
+            int sub_label_count=countNonZero(Mat(weight_mat[i],roi));
+            if (sub_label_count>=label_count/rate)
+            {
+                window=window1;
+            }
+        }
+        TermCriteria criteria=TermCriteria(TermCriteria::COUNT+TermCriteria::EPS, 10, 0.01);
+        
+
+        /*
+        if (joints.size()!=31||(!is_valid))
+        {
+            //use adaptive window size
+//             int sz;
+//             for (sz=20;sz<depthImg.rows/5;sz+=6)
+//             {
+//                 window.height=max(min(depthImg.rows-window.y-1,sz),0);
+//                 window.width=max(min(depthImg.cols-window.x-1,sz),0);
+//                 if (window.height==0||window.width==0)
+//                 {
+//                     break;
+//                 }
+//                 int label_count = countNonZero(weight_mat[i]);
+//                 int window_label_count = countNonZero(Mat(weight_mat[i],window));
+//                 if (window_label_count*4>=label_count)
+//                 {
+//                     break;
+//                 }
+//             }
+//             window.height=window.width=sz;window.x=max((window.x-window.width/2),0);window.y=max((window.y-window.height/2),0);
+            meanShift(weight_mat[i],window,criteria);
+        }
+        //method 2: using previous joints
+        else
+        {
+            //use adaptive window size
+//             int sz;
+//             for (sz=20;sz<depthImg.rows/5;sz+=6)
+//             {
+//                 window.height=max(min(depthImg.rows-window.y-1,sz),0);
+//                 window.width=max(min(depthImg.cols-window.x-1,sz),0);
+//                 if (window.height==0||window.width==0)
+//                 {
+//                     break;
+//                 }
+//                 int label_count = countNonZero(weight_mat[i]);
+//                 int window_label_count = countNonZero(Mat(weight_mat[i],window));
+//                 if (window_label_count*4>=label_count)
+//                 {
+//                     break;
+//                 }
+//             }
+//             window.height=window.width=sz;window.x=max((window.x-window.width/2),0);window.y=max((window.y-window.height/2),0);
+            meanShift(weight_mat[i],window,criteria);
+            //deal with the situation that the joints is not on the body
+//             if (depthImg.at<unsigned int>(window.y,window.x)==INT_MAX)
+//             {
+//                 window = Rect(int(x)-15,int(y)-15,30,30);
+//                 criteria=TermCriteria(TermCriteria::COUNT+TermCriteria::EPS, 10, 0.01);
+//                 res = meanShift(weight_mat[i],window,criteria);
+//             }
+        }
+        */
+        
+        meanShift(weight_mat[i]+dis_weight_mat[i],window,criteria);
+        //meanShift(weight_mat[i],window,criteria);
+
+        //check if the current window is wrong
+        if (joints.size()==31)
+        {
+            Rect roi;
+            roi.x=window.x;roi.y=window.y;
+            roi.width=min(window_size,depthImg.cols-1-window.x);
+            roi.height=min(window_size,depthImg.rows-1-window.y);
+            int sub_label_count=countNonZero(Mat(weight_mat[i],roi));
+            if (sub_label_count<=10)
+            {
+                window=window1;
+            }
+        }
+
+        Joint center;
+        center.x()=window.x+window.width/2;center.y()=window.y+window.height/2;
+        center.z()=depthImg.at<unsigned int>(center.y(),center.x());
+        //circle(depth_draw,center,2,255);
+        _joints.push_back(center);
+        
+    }
+    //merge joints
+    joints=_joints;
+    vector<Joint> ret(8);
+    ret[0] = (joints[BodyLabel_L_Shoulder]);
+    ret[1] = (joints[BodyLabel_L_Elbow]);
+    ret[2] = (joints[BodyLabel_L_Hand]);
+    ret[3] = (joints[BodyLabel_R_Shoulder]);
+    ret[4] = (joints[BodyLabel_R_Elbow]);
+    ret[5] = (joints[BodyLabel_R_Hand]);
+    ret[6] = ((joints[BodyLabel_LU_Head]+joints[BodyLabel_LW_Head]+
+        joints[BodyLabel_RU_Head]+joints[BodyLabel_RU_Head])/4.0);
+    ret[7] = ((joints[BodyLabel_LU_Torso]+joints[BodyLabel_LW_Torso]+
+        joints[BodyLabel_RU_Torso]+joints[BodyLabel_RU_Torso])/4.0);
+//     ret.push_back(joints[BodyLabel_LU_Leg]);
+//     ret.push_back(joints[BodyLabel_LW_Leg]);
+//     ret.push_back(joints[BodyLabel_L_Foot]);
+//     ret.push_back(joints[BodyLabel_RU_Leg]);
+//     ret.push_back(joints[BodyLabel_RW_Leg]);
+//     ret.push_back(joints[BodyLabel_R_Foot]);
+    //more realistic joints
+    ret.push_back((joints[BodyLabel_LW_Torso]+joints[BodyLabel_LU_Leg])/2.0);
+    ret.push_back((joints[BodyLabel_LU_Leg]+joints[BodyLabel_LW_Leg])/2.0);
+    ret.push_back(joints[BodyLabel_L_Foot]);
+    ret.push_back((joints[BodyLabel_RW_Torso]+joints[BodyLabel_RU_Leg])/2.0);
+    ret.push_back((joints[BodyLabel_RU_Leg]+joints[BodyLabel_RW_Leg])/2.0);
+    ret.push_back(joints[BodyLabel_R_Foot]);
+
+    //draw joints
+//     for (int i=0;i<ret.size();++i)
+//     {
+//         Point p;
+//         p.x=ret[i].x();
+//         p.y=ret[i].y();
+//         circle(depth_draw,p,2,255,2);
+//     }
+//     imshow("new joints",depth_draw);
+    sklt=ret;
+}
+//---sunguofei 2015.12.10
+void BPRecognizer::offsetJoint_meanshift(CapgSkeleton& sklt)
+{
+    vector<vector<double>> res;
+    vector<Joint> res_2d(18);
+    for (int i=0;i<18;++i)
+    {
+        vector<double> s_p(3);
+        double weight=0;
+        for (int j=0;j<offset_result[i].size();++j)
+        {
+            s_p[0]+=offset_result[i][j][0]*offset_weight[i][j];
+            s_p[1]+=offset_result[i][j][1]*offset_weight[i][j];
+            s_p[2]+=offset_result[i][j][2]*offset_weight[i][j];
+            weight+=offset_weight[i][j];
+        }
+        if (weight!=0)
+        {
+            s_p[0]/=weight;s_p[1]/=weight;s_p[2]/=weight;
+        }
+        if (joints_3d.size()!=0)
+        {
+//             if (joints_3d[i][0]!=0&&joints_3d[i][1]!=0)
+//             {
+                s_p[0]=joints_3d[i][0];
+                s_p[1]=joints_3d[i][1];
+                s_p[2]=joints_3d[i][2];
+            //}
+        }
+        MeanShift* msf=new MeanShift();
+        s_p=msf->shift_point(s_p,offset_result[i],offset_weight[i],250000);
+        offset_result[i].clear();
+        offset_weight[i].clear();
+        res.push_back(s_p);
+        Joint jt;
+        jt.x()=int(159.5+s_p[0]*262.5/s_p[2]);
+        jt.y()=int(119.5-s_p[1]*262.5/s_p[2]);
+        jt.z()=int(s_p[2]);
+        res_2d[i]=jt;
+    }
+    joints_3d=res;
+    vector<Joint> ret(8);
+    ret[0] = (res_2d[8]);
+    ret[1] = (res_2d[7]);
+    ret[2] = (res_2d[6]);
+    ret[3] = (res_2d[9]);
+    ret[4] = (res_2d[10]);
+    ret[5] = (res_2d[11]);
+    ret[6] = (res_2d[13]);
+    ret[7] = (res_2d[12]);
+    ret.push_back(res_2d[2]);
+    ret.push_back(res_2d[1]);
+    ret.push_back(res_2d[0]);
+    ret.push_back(res_2d[3]);
+    ret.push_back(res_2d[4]);
+    ret.push_back(res_2d[5]);
+    ret.push_back(res_2d[16]);
+    ret.push_back(res_2d[17]);
+    sklt=ret;
 }
 
 #define TOREN 3
@@ -435,24 +891,44 @@ ErodeEnd:
 		"  Erode for error: "+LogCat::to_string(erodeForErrorCount), _moduleID);
 
 	// convert to Shuyang Sun version
-	ret.clear();
-	ret.resize(8);
-	ret[0] = (_skeleton[BodyLabel_L_Shoulder]);
-	ret[1] = (_skeleton[BodyLabel_L_Elbow]);
-	ret[2] = (_skeleton[BodyLabel_L_Hand]);
-	ret[3] = (_skeleton[BodyLabel_R_Shoulder]);
-	ret[4] = (_skeleton[BodyLabel_R_Elbow]);
-	ret[5] = (_skeleton[BodyLabel_R_Hand]);
-	ret[6] = ((_skeleton[BodyLabel_LU_Head]+_skeleton[BodyLabel_LW_Head]+
-		_skeleton[BodyLabel_RU_Head]+_skeleton[BodyLabel_RU_Head])/4.0);
-	ret[7] = ((_skeleton[BodyLabel_LU_Torso]+_skeleton[BodyLabel_LW_Torso]+
-		_skeleton[BodyLabel_RU_Torso]+_skeleton[BodyLabel_RU_Torso])/4.0);
-	ret.push_back(_skeleton[BodyLabel_LU_Leg]);
-	ret.push_back(_skeleton[BodyLabel_LW_Leg]);
-	ret.push_back(_skeleton[BodyLabel_L_Foot]);
-	ret.push_back(_skeleton[BodyLabel_RU_Leg]);
-	ret.push_back(_skeleton[BodyLabel_RW_Leg]);
-	ret.push_back(_skeleton[BodyLabel_R_Foot]);
+// 	ret.clear();
+// 	ret.resize(8);
+// 	ret[0] = (_skeleton[BodyLabel_L_Shoulder]);
+// 	ret[1] = (_skeleton[BodyLabel_L_Elbow]);
+// 	ret[2] = (_skeleton[BodyLabel_L_Hand]);
+// 	ret[3] = (_skeleton[BodyLabel_R_Shoulder]);
+// 	ret[4] = (_skeleton[BodyLabel_R_Elbow]);
+// 	ret[5] = (_skeleton[BodyLabel_R_Hand]);
+// 	ret[6] = ((_skeleton[BodyLabel_LU_Head]+_skeleton[BodyLabel_LW_Head]+
+// 		_skeleton[BodyLabel_RU_Head]+_skeleton[BodyLabel_RU_Head])/4.0);
+// 	ret[7] = ((_skeleton[BodyLabel_LU_Torso]+_skeleton[BodyLabel_LW_Torso]+
+// 		_skeleton[BodyLabel_RU_Torso]+_skeleton[BodyLabel_RU_Torso])/4.0);
+// 	ret.push_back(_skeleton[BodyLabel_LU_Leg]);
+// 	ret.push_back(_skeleton[BodyLabel_LW_Leg]);
+// 	ret.push_back(_skeleton[BodyLabel_L_Foot]);
+// 	ret.push_back(_skeleton[BodyLabel_RU_Leg]);
+// 	ret.push_back(_skeleton[BodyLabel_RW_Leg]);
+// 	ret.push_back(_skeleton[BodyLabel_R_Foot]);
+
+    //change the location of leg joint ---sunguofei 2015-11-5
+    ret.clear();
+    ret.resize(8);
+    ret[0] = (_skeleton[BodyLabel_L_Shoulder]);
+    ret[1] = (_skeleton[BodyLabel_L_Elbow]);
+    ret[2] = (_skeleton[BodyLabel_L_Hand]);
+    ret[3] = (_skeleton[BodyLabel_R_Shoulder]);
+    ret[4] = (_skeleton[BodyLabel_R_Elbow]);
+    ret[5] = (_skeleton[BodyLabel_R_Hand]);
+    ret[6] = ((_skeleton[BodyLabel_LU_Head]+_skeleton[BodyLabel_LW_Head]+
+        _skeleton[BodyLabel_RU_Head]+_skeleton[BodyLabel_RU_Head])/4.0);
+    ret[7] = ((_skeleton[BodyLabel_LU_Torso]+_skeleton[BodyLabel_LW_Torso]+
+        _skeleton[BodyLabel_RU_Torso]+_skeleton[BodyLabel_RU_Torso])/4.0);
+    ret.push_back((_skeleton[BodyLabel_LW_Torso]+_skeleton[BodyLabel_LU_Leg])/2.0);
+    ret.push_back((_skeleton[BodyLabel_LU_Leg]+_skeleton[BodyLabel_LW_Leg])/2.0);
+    ret.push_back(_skeleton[BodyLabel_L_Foot]);
+    ret.push_back((_skeleton[BodyLabel_RW_Torso]+_skeleton[BodyLabel_RU_Leg])/2.0);
+    ret.push_back((_skeleton[BodyLabel_RU_Leg]+_skeleton[BodyLabel_RW_Leg])/2.0);
+    ret.push_back(_skeleton[BodyLabel_R_Foot]);
 
 	PLAIN_MSG("-- Merge Joint End", _moduleID);
 
@@ -565,7 +1041,80 @@ void BPRecognizer::predictAndMergeJoint(IplImage* depthImg, CapgSkeleton& sklt, 
 	//return skeleton;
 }
 
+//---sunguofei 2015.11.10
+bool BPRecognizer::train()
+{
+    IMPORT_MSG("Training start", _moduleID);
 
+    if(_trainSamples == 0){
+        ERROR_MSG("Unable to train without train samples, please load", _moduleID);
+        return false;
+    }
+
+    IMPORT_MSG("Clear train matrices and allocate new...", _moduleID);
+    clearTrainMat();
+
+    // memory allocation
+    _sample_count = _para.img_per_tree*_para.pixel_per_img;
+    _value_count = _para.theta_per_tree;
+    _value_mat = cvCreateMat(_sample_count, _value_count, CV_32FC1);
+    _response_mat = cvCreateMat(_sample_count, 1, CV_32SC1);
+    _var_type_mat = cvCreateMat(_value_count+1, 1, CV_8UC1);
+    _active_var_mask = cvCreateMat(1, _value_count, CV_8UC1);
+    if(_value_mat == 0 || _response_mat == 0 ||
+        _var_type_mat == 0 || _active_var_mask == 0){
+            ERROR_MSG("Not enough memory to build value and response matrix", _moduleID);
+            clearTrainMat();
+            return false;
+    }
+
+    IMPORT_MSG("Setup value type matrix and train paramenter...", _moduleID);
+    // set value type matrix
+    //if(_para.feature_type == DEPTH_FEATURE_GSUB || _para.feature_type == DEPTH_FEATURE_GADD){
+    //	cvSet(_var_type_mat, cvScalarAll(CV_VAR_NUMERICAL));
+    //	CV_MAT_ELEM(*_var_type_mat, uchar, (_var_type_mat->rows-1), 0) = CV_VAR_CATEGORICAL;
+    //}else if(_para.feature_type == DEPTH_FEATURE_GHALF){
+    //	cvSet(_var_type_mat, cvScalarAll(CV_VAR_CATEGORICAL));
+    //}
+    cvSet(_var_type_mat, cvScalarAll(CV_VAR_NUMERICAL));
+    CV_MAT_ELEM(*_var_type_mat, uchar, (_var_type_mat->rows-1), 0) = CV_VAR_CATEGORICAL;
+
+    // setup train data
+    _dPara = CvDTreeParams(_para.tree_depth, 100, 0, false, 50,
+        0, false, false, 0);
+
+    IMPORT_MSG("Growing forest...", _moduleID);
+    char buf[10];
+    for(int i=_treeNum; i<_para.tree_num; i++){
+        BPRTree* tree = new BPRTree();
+        vector<DepthFeature*>* fset = new vector<DepthFeature*>();
+        _features.push_back(fset);
+
+        IMPORT_MSG(string("Tree No.")+_itoa(i,buf,10), _moduleID);
+        bool res = tree->train(this);
+
+        if(res){
+            _forest.push_back(tree);
+            _treeNum++;
+        }else{
+            delete tree;
+            clearTrainMat();
+            for(vector<DepthFeature*>::iterator it=fset->begin(); it!=fset->end(); it++){
+                delete *it;
+            }
+            fset->clear();
+            _features.pop_back();
+            delete fset;
+            return false;
+        }
+    }
+
+    clearTrainMat();
+
+    IMPORT_MSG("Training finish", _moduleID);
+
+    return true;
+}
 
 void BPRecognizer::test(bool save)
 {
@@ -596,8 +1145,11 @@ void BPRecognizer::test(bool save)
 		IplImage* dImg = img->getDepthImg();
 		IplImage* lImg_gt = img->getlabelImg();
 		IplImage* colorImg = cvCreateImage(cvSize(lImg_gt->width, lImg_gt->height), IPL_DEPTH_8U, 3);
-		IplImage* lImg = predict(dImg);
-		int pCount = dImg->width*dImg->height;
+		//IplImage* lImg = predict(dImg);
+		//---sunguofei 2015.11.11
+        IplImage* lImg = predict(dImg,0,false,true);
+
+        int pCount = dImg->width*dImg->height;
 		int pCorrect = 0;
 		int pAna = 0;
 		vector<int> partCorrect;
@@ -1003,8 +1555,11 @@ bool DepthSampleGenerator::generateDataFromFile()
 
 	// load from file (ke_ji_guan)
 	string rootFile = _data_path;
-	string infoFile = _data_path + "/sample_info";
-	fstream f;
+	//string infoFile = _data_path + "/sample_info";
+    //---sunguofei 2015.11.10  use sample_info.txt
+	string infoFile = _data_path + "/sample_info.txt";
+
+    fstream f;
 	f.open(infoFile.data());
 	if(!f.is_open()){
 		ERROR_MSG("Load train data from file failed since cannot find sample_info file", _moduleID);
@@ -1012,13 +1567,19 @@ bool DepthSampleGenerator::generateDataFromFile()
 	}
 	string s;
 	getline(f, s);
-	double p_add = 1.0/993;
+	double p_add = 1.0/5000;
 	double p = p_add;
 	while(!s.empty()){
 		LogCat::getInstancePtr()->setProcessBar(p);
 		string labelFile = rootFile + s + ".bmp";
+        //---sunguofei 2015.11.10 our new data is .png
+        //string labelFile = rootFile + s + ".png";
+
 		getline(f, s);
 		string depthFile = rootFile + s + ".bmp";
+        //---sunguofei 2015.11.10
+        //string depthFile = rootFile + s + ".png";
+
 		DepthSample* sample = new DepthSample(depthFile, labelFile);
 		_samples.push_back(sample);
 		getline(f, s);

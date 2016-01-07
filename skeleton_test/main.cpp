@@ -7,12 +7,15 @@
 #include "../SimpleSilhouette.h"
 #include "../sgf_seed/sgf_segment.h"
 
+//sunguofei 2015.11.9
+#include "../train_sgf.h"
+
 using namespace std;
 using namespace cv;
 
-#define ZC_DEBUG_LV1 01	//显示关键结果图
+#define ZC_DEBUG_LV1 0	//显示关键结果图
 #define ZC_DEBUG_LV2 0	//显示某些中间结果图
-#define ZC_WRITE 01		//输出关节结果到jpg文件
+#define ZC_WRITE 0		//输出关节结果到jpg文件
 #define ZC_CLEAN 01		//@deprecated, 后改用 CAPG_SKEL_VERSION_0_9 了
 
 #define CAPG_SKEL_VERSION_0_1 //最初交付的代码版本
@@ -128,6 +131,11 @@ void nmhSilhouAndSklt( Mat &dm, int fid ){
 
 
 void main(int argc, char **argv){
+    //train
+    //bool trained = train_SGF::train(1,"E:/FbxAllData");
+    //bool trained = train_SGF::train(1,"E:/liuzhoupeng_disk_data/databaseData/RESULT/CMU(320-240)");
+
+    //end
 	freopen("_debug_info.log", "w", stdout);
 
 	float zoomFactor = 1;
@@ -168,13 +176,17 @@ void main(int argc, char **argv){
 // 	oniFname = "E:/oni_data/oni132_orig/zc_indoor_stand.oni";
 	//oniFname = "E:/oni_data/oni132_orig/zc_indoor_touch_panel.oni"; //人手触摸大平面板
 	//oniFname = "E:/oni_data/oni132_orig/indoor-driver-noise.oni";	//对比测试 MS/primesense 驱动
-	oniFname = "E:/oni_data/oni@orbbec/格斗.oni";
-	oniFname = "E:/oni_data/oni@orbbec/飞机.oni";
+// 	oniFname = "E:/oni_data/oni@orbbec/格斗.oni";
+// 	oniFname = "E:/oni_data/oni@orbbec/飞机.oni";
+// 	oniFname = "E:/oni_data/oni@orbbec/拍球.oni";
+//  oniFname = "E:/oni_data/oni@orbbec/打网球.oni";
+//  oniFname = "E:/oni_data/oni@orbbec/女版拯救小羊.oni";
 
 	//oniFname = ""; //不行
+    oniFname = "E:/oni_data/oni@orbbec/格斗.oni";//oni data location and file name
 
 	xn::Player plyr;
-	rc = ctx.OpenFileRecording(oniFname, plyr);
+	rc = ctx.OpenFileRecording(oniFname, plyr);//want to use real data,just annotate this line
 	int frameOffset = std::stoi(argv[1]);
 	plyr.SeekToFrame("Depth1", frameOffset, XN_PLAYER_SEEK_SET);
 	plyr.SetRepeat(string(argv[2])=="true"); //放在 OpenFileRecording 之后才有效
